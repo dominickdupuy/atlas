@@ -1,0 +1,15 @@
+# Deliberately invalid: write mode without auto_approve (D8 violation).
+id: bad-job
+description: Should never load
+schedule: "0 0 * * *"
+tier: 1
+mode: write
+tools:
+  - home-assistant.turn_off
+steps:
+  - tool: home-assistant.turn_off
+    args: {}
+    save_as: result
+propose:
+  tool: home-assistant.turn_off
+  summary: nope

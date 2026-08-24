@@ -1,0 +1,26 @@
+# Test fixture: tier 1 / propose against the stub connectors.
+id: lights-out
+description: Propose turning off the living room lights
+schedule: "0 23 * * *"
+tier: 1
+mode: propose
+approval_ttl_seconds: 3600
+
+tools:
+  - home-assistant.get_state
+  - home-assistant.turn_off
+
+steps:
+  - tool: home-assistant.get_state
+    args: {}
+    save_as: state
+
+propose:
+  tool: home-assistant.turn_off
+  args:
+    entity_id: light.living_room
+  summary: Turn off the living room lights
+
+budget:
+  max_wall_clock_seconds: 10
+  max_tool_calls: 3
