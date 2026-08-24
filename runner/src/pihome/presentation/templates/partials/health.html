@@ -1,0 +1,11 @@
+<h2>System</h2>
+<ul class="health">
+  <li>
+    scheduler:
+    {% if paused %}<span class="badge badge-failed">paused</span>
+    {% else %}<span class="badge badge-completed">running</span>{% endif %}
+  </li>
+  <li>{{ job_count }} job(s) enabled</li>
+  <li>profile: {{ profile }}</li>
+  <li>{{ sse_clients }} board connection(s)</li>
+</ul>

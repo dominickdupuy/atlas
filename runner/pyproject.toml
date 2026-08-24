@@ -1,0 +1,75 @@
+[project]
+name = "pihome"
+version = "0.1.0"
+description = "pi-home job runner: scheduled agentic jobs with approvals, budgets, and a passive ops board"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "jinja2>=3.1",
+    "pydantic>=2.10",
+    "pydantic-settings>=2.7",
+    "aiosqlite>=0.20",
+    "aiomqtt>=2.3",
+    "httpx>=0.28",
+    "croniter>=5.0",
+    "pyyaml>=6.0",
+    # IANA zone data for platforms without a system database (Windows dev,
+    # slim containers). Cron schedules and budget windows depend on it.
+    "tzdata>=2024.1",
+    "anthropic>=0.40",
+    "mcp>=1.2",
+    "sse-starlette>=2.1",
+]
+
+[project.scripts]
+pihome = "pihome.__main__:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.25",
+    "pytest-socket>=0.7",
+    "respx>=0.22",
+    "ruff>=0.16.4",
+    "mypy>=1.14",
+    "types-croniter",
+    "types-pyyaml",
+    "pre-commit>=4.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# DTZ matters here: this system is TTLs, cron, and ledgers — a naive datetime
+# is a bug by definition.
+select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC", "DTZ", "RUF"]
+
+[tool.mypy]
+strict = true
+warn_unreachable = true
+plugins = ["pydantic.mypy"]
+mypy_path = "src"
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+# Hermetic by default: no sockets except loopback (local MQTT tests use the
+# compose broker; they are marked and excluded in CI).
+addopts = "--disable-socket --allow-hosts=127.0.0.1,::1"
+markers = [
+    "mqtt: requires a live MQTT broker (docker compose up mosquitto); excluded in CI",
+    "slow: long-running",
+]

@@ -1,0 +1,16 @@
+<h2>Awaiting approval</h2>
+{% if approvals %}
+{# Visible here, actionable on the phone (D11): the monitor has no touch input. #}
+<ul class="approvals">
+  {% for approval in approvals %}
+  <li>
+    <span class="job-id">{{ approval.job_id }}</span>
+    <span class="summary">{{ approval.action.summary }}</span>
+    <span class="time">expires {{ approval.expires_at | localtime }}</span>
+  </li>
+  {% endfor %}
+</ul>
+<p class="hint">Respond on your phone.</p>
+{% else %}
+<p class="empty">Queue clear.</p>
+{% endif %}

@@ -1,0 +1,14 @@
+<h2>Next up</h2>
+{% if fires %}
+<ul class="schedule">
+  {% for job, fire_at in fires %}
+  <li>
+    <span class="time">{{ fire_at | localtime }}</span>
+    <span class="job-id">{{ job.id }}</span>
+    <span class="detail">tier {{ job.tier.value }} · {{ job.mode.value }}</span>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="empty">No jobs enabled.</p>
+{% endif %}

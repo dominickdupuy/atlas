@@ -1,0 +1,14 @@
+<h2>Budget</h2>
+<div class="budget budget-{{ status.level.value }}">
+  <div class="spend">
+    {{ format_usd(status.spent_usd_micros) }}
+    <span class="of">of {{ format_usd(status.ceiling_usd_micros) }} today</span>
+  </div>
+  <div class="meter">
+    {% set pct = (100 * status.spent_usd_micros / status.ceiling_usd_micros) if status.ceiling_usd_micros else 0 %}
+    <div class="meter-fill" style="width: {{ [pct, 100] | min }}%"></div>
+  </div>
+  {% if status.level.value == "exhausted" %}
+  <p class="alert">Ceiling reached — scheduler paused.</p>
+  {% endif %}
+</div>

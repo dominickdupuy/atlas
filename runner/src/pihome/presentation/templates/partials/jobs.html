@@ -1,0 +1,17 @@
+<h2>Runs</h2>
+{% if runs %}
+<table>
+  <tbody>
+    {% for run in runs %}
+    <tr class="state-{{ run.state.value }}">
+      <td class="job-id">{{ run.job_id }}</td>
+      <td><span class="badge badge-{{ run.state.value }}">{{ run.state.value | replace("_", " ") }}</span></td>
+      <td class="time">{{ run.started_at | localtime }}</td>
+      <td class="detail">{{ (run.error or "")[:80] }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">No runs yet.</p>
+{% endif %}

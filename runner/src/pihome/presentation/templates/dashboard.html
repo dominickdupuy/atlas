@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+{# D11 constraints: output only — nothing here depends on hover, scroll,
+   click, or pagination. SSE pushes updates; the hx-trigger polls are the
+   belt-and-braces refresh after a disconnect. #}
+<main hx-ext="sse" sse-connect="/events">
+  <header class="topbar">
+    <h1>pi-home</h1>
+    <div id="mode" sse-swap="mode" hx-get="/partials/mode" hx-trigger="every 67s">
+      {{ panels.mode | safe }}
+    </div>
+  </header>
+  <section class="grid">
+    <div class="panel wide" id="panel-jobs" sse-swap="jobs"
+         hx-get="/partials/jobs" hx-trigger="every 61s">
+      {{ panels.jobs | safe }}
+    </div>
+    <div class="panel" id="panel-approvals" sse-swap="approvals"
+         hx-get="/partials/approvals" hx-trigger="every 63s">
+      {{ panels.approvals | safe }}
+    </div>
+    <div class="panel" id="panel-schedule" sse-swap="schedule"
+         hx-get="/partials/schedule" hx-trigger="every 71s">
+      {{ panels.schedule | safe }}
+    </div>
+    <div class="panel" id="panel-budget" sse-swap="budget"
+         hx-get="/partials/budget" hx-trigger="every 73s">
+      {{ panels.budget | safe }}
+    </div>
+    <div class="panel" id="panel-health" sse-swap="health"
+         hx-get="/partials/health" hx-trigger="every 79s">
+      {{ panels.health | safe }}
+    </div>
+  </section>
+</main>
+{% endblock %}
