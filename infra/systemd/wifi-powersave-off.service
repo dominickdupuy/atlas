@@ -1,0 +1,17 @@
+# D15: Wi-Fi power save adds latency and drops packets on a quiet connection,
+# which is exactly this host's profile. The setting resets on reboot, hence a
+# unit rather than a one-off command.
+# Install: copy to /etc/systemd/system/, then:
+#   systemctl daemon-reload && systemctl enable --now wifi-powersave-off
+
+[Unit]
+Description=Disable Wi-Fi power save (D15)
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/iw wlan0 set power_save off
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

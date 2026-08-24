@@ -1,0 +1,127 @@
+# pi-home stack.
+#
+# Image pinning (D19): exact version tags only, never `latest` or floating
+# majors. Upgrade procedure: bump the tag, `docker compose pull`, run the
+# stack, watch the board, then commit.
+#
+# Profiles:
+#   (none)   mosquitto + ntfy + runner. Works on any dev machine with zero
+#            credentials via PIHOME_PROFILE=dev (stub connectors).
+#   ha       Home Assistant. Required on the Pi, optional in dev.
+#   mcp      MCP connector servers (real, scoped credentials required — D19).
+#   voice    Wyoming STT/TTS services, phase 6. See docs/voice.md.
+
+name: pihome
+
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2.0.22
+    restart: unless-stopped
+    volumes:
+      - ./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto-data:/mosquitto/data
+    ports:
+      # Loopback only: for `mosquitto_sub` debugging from the host. Services
+      # reach the broker over the compose network; nothing else should (D12).
+      - "127.0.0.1:1883:1883"
+
+  ntfy:
+    image: binwiederhier/ntfy:v2.27.0
+    restart: unless-stopped
+    command: serve
+    environment:
+      # The URL your PHONE uses to reach ntfy. On the Pi: the Tailscale
+      # address (D12). Dev default is fine for browser testing.
+      NTFY_BASE_URL: ${PIHOME_NTFY_BASE_URL:-http://127.0.0.1:8090}
+    volumes:
+      - ./infra/ntfy/server.yml:/etc/ntfy/server.yml:ro
+      - ntfy-auth:/var/lib/ntfy
+      - ntfy-cache:/var/cache/ntfy
+    ports:
+      # Dev: loopback. On the Pi, publish on the Tailscale interface instead:
+      #   "100.x.y.z:8090:80"
+      - "127.0.0.1:8090:80"
+
+  runner:
+    build: ./runner
+    restart: unless-stopped
+    depends_on:
+      - mosquitto
+      - ntfy
+    env_file: .env
+    environment:
+      # Container-internal paths and wiring; user config stays in .env.
+      PIHOME_DB_PATH: /data/state.db
+      PIHOME_JOBS_DIR: /jobs
+      PIHOME_MQTT_HOST: mosquitto
+      PIHOME_NTFY_URL: http://ntfy
+      # Inside the container bind wide; exposure is controlled by the port
+      # mapping below (D16).
+      PIHOME_BIND_HOST: 0.0.0.0
+    volumes:
+      - ./jobs:/jobs:ro
+      - pihome-data:/data
+    ports:
+      # Dev: loopback only. On the Pi, publish on the Tailscale interface
+      # (D16): "100.x.y.z:8100:8100". Never 0.0.0.0.
+      - "127.0.0.1:${PIHOME_BIND_PORT:-8100}:8100"
+
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:2026.8.3
+    profiles: [ha]
+    restart: unless-stopped
+    # Host networking is required on the Pi for device discovery (mDNS etc.).
+    # It does not work on Docker Desktop: for Windows/macOS dev, comment
+    # `network_mode` and uncomment the port mapping.
+    network_mode: host
+    # ports:
+    #   - "127.0.0.1:8123:8123"
+    volumes:
+      - ./homeassistant:/config
+      - /etc/localtime:/etc/localtime:ro
+
+  # --- MCP connector servers (phase 5, D19) ---------------------------------
+  # Official GitHub MCP server. Credential: fine-grained READ-ONLY PAT scoped
+  # to the repos it needs — provider-side scoping is the first layer of
+  # defense; the per-job tool allowlist is the second.
+  github-mcp:
+    image: ghcr.io/github/github-mcp-server:v1.10.1
+    profiles: [mcp]
+    restart: unless-stopped
+    environment:
+      GITHUB_PERSONAL_ACCESS_TOKEN: ${GITHUB_TOKEN}
+    # NOTE (phase 5): confirm the transport flags for serving streamable HTTP
+    # on the compose network at implementation time; the server's default is
+    # stdio. Pin any flag changes here with a comment.
+
+  # Google Calendar MCP server — community-maintained, so per D19 it is NOT
+  # enabled until its source has been read and a specific release vetted.
+  # Vetting checklist (docs/operations.md): read the token-handling code,
+  # confirm no telemetry/phone-home, pin the exact release, grant a
+  # READ-ONLY OAuth scope.
+  # gcal-mcp:
+  #   image: <vetted-image>:<exact-tag>
+  #   profiles: [mcp]
+  #   restart: unless-stopped
+  #   environment:
+  #     GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID}
+  #     GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET}
+
+  # --- Voice services (phase 6) ---------------------------------------------
+  # Pinned Wyoming services, disabled until the microphone hardware exists.
+  # See docs/voice.md for the Assist pipeline wiring.
+  # speech-to-phrase:
+  #   image: rhasspy/wyoming-speech-to-phrase:<pin at phase 6>
+  #   profiles: [voice]
+  # whisper:
+  #   image: rhasspy/wyoming-whisper:<pin at phase 6>
+  #   profiles: [voice]
+  # piper:
+  #   image: rhasspy/wyoming-piper:<pin at phase 6>
+  #   profiles: [voice]
+
+volumes:
+  mosquitto-data:
+  ntfy-auth:
+  ntfy-cache:
+  pihome-data:

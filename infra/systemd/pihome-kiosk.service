@@ -1,0 +1,29 @@
+# pi-home kiosk: Chromium under cage rendering the ops board (D17).
+# Install: copy to /etc/systemd/system/, create /etc/pihome/kiosk.env with
+#   PIHOME_KIOSK_URL=http://127.0.0.1:8100/?token=<PIHOME_API_TOKEN>
+# (the ?token= visit sets the auth cookie, D16), then:
+#   systemctl daemon-reload && systemctl enable --now pihome-kiosk
+
+[Unit]
+Description=pi-home kiosk (cage + chromium)
+After=graphical.target network-online.target
+Wants=network-online.target
+
+[Service]
+User=pi
+EnvironmentFile=/etc/pihome/kiosk.env
+# Startup delay avoids the known white-screen-on-autostart race (D17).
+ExecStartPre=/bin/sleep 10
+ExecStart=/usr/bin/cage -- /usr/bin/chromium-browser --kiosk \
+    --ozone-platform=wayland \
+    --noerrdialogs \
+    --disable-session-crashed-bubble \
+    ${PIHOME_KIOSK_URL}
+# Watchdog and the memory cap from section 8: a leaking Chromium must not
+# starve Home Assistant.
+Restart=always
+RestartSec=5
+MemoryMax=800M
+
+[Install]
+WantedBy=graphical.target

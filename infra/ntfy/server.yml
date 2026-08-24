@@ -1,0 +1,13 @@
+# ntfy server config — the approvals channel (D8).
+#
+# Runs behind Tailscale on the Pi (D12); never exposed publicly. Access is
+# deny-by-default: the runner publishes with a token, the phone subscribes
+# with a user account. Setup commands are in docs/operations.md.
+#
+# base-url is injected via the NTFY_BASE_URL environment variable in
+# compose.yaml (it must be the address the phone uses).
+
+auth-file: /var/lib/ntfy/user.db
+auth-default-access: deny-all
+
+cache-file: /var/cache/ntfy/cache.db

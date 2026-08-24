@@ -1,0 +1,33 @@
+# Exact-pinned hooks (D19 applies to dev tooling too).
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: detect-private-key
+      - id: check-added-large-files
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.4
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      # Slow, so push-stage only. CI runs it on every push regardless.
+      - id: mypy
+        name: mypy (strict)
+        entry: uv --directory runner run mypy src tests
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+      - id: validate-jobs
+        name: validate job definitions
+        entry: uv --directory runner run pihome validate-jobs --jobs-dir ../jobs
+        language: system
+        files: ^jobs/.*\.ya?ml$
+        pass_filenames: false

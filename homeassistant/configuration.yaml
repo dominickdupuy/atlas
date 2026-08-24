@@ -1,0 +1,22 @@
+# Home Assistant core configuration (phase 1).
+#
+# Runtime state (.storage/, databases, logs) is gitignored via the local
+# .gitignore; secrets belong in secrets.yaml (also gitignored).
+#
+# Integrations configured through the UI, not this file:
+#   - MQTT: broker host "mosquitto" (compose network) / the Pi's address.
+#   - MCP Server (D4): exposes entities as tools. Keep sensitive entities out
+#     of the exposed set — never-control rules live there (section 8).
+#   - Assist pipeline (phase 6): see docs/voice.md.
+
+default_config:
+
+# D13: recorder exclusions configured in phase 1, before the database grows.
+# High-frequency reporters degrade HA responsiveness long before disk fills.
+recorder:
+  purge_keep_days: 10
+  exclude:
+    entity_globs:
+      - sensor.*_rssi
+      - sensor.*_linkquality
+      - sensor.*_signal_strength

@@ -1,0 +1,4 @@
+# Allowlist: only hand-written config is tracked; all HA runtime state stays out.
+*
+!.gitignore
+!configuration.yaml

@@ -1,0 +1,25 @@
+# Secrets — never in the repo (section 8: credential leak)
+.env
+*.pem
+secrets.yaml
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Runtime state (D16: SQLite lives on a data volume, not in git)
+*.db
+*.db-wal
+*.db-shm
+data/
+
+# OS noise
+.DS_Store
+Thumbs.db

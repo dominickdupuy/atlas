@@ -1,0 +1,29 @@
+# Tier 1 / read: the phase-2 first job (spec §10) — pull today's calendar,
+# publish it for the board. No model involved anywhere.
+id: calendar-today
+description: Pull today's calendar and publish it to the display
+schedule: "*/30 6-22 * * *"
+tier: 1
+mode: read
+
+tools:
+  - google-calendar.list_events
+
+steps:
+  - tool: google-calendar.list_events
+    args:
+      range: today
+    save_as: events
+
+budget:
+  max_wall_clock_seconds: 30
+  max_tool_calls: 3
+
+on_failure:
+  notify: display
+  retry: 1
+  escalate_after: 3
+
+output:
+  publish_to: pihome/jobs/calendar-today/completed
+  speak: false

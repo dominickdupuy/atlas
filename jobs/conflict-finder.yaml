@@ -1,0 +1,43 @@
+# Tier 3 / propose: the phase-7 example, shipped DISABLED (spec §10: the
+# riskiest capability ships last, on top of guardrails that already exist).
+# The executor is a bounded single-round stub until phase 7; anything it
+# proposes still goes through the D8/D16 approval queue.
+# Exercise by hand: POST /api/jobs/conflict-finder/run
+id: conflict-finder
+description: Find scheduling conflicts this week and propose fixes
+schedule: "0 18 * * 0"
+tier: 3
+mode: propose
+enabled: false
+approval_ttl_seconds: 86400
+
+tools:
+  - google-calendar.list_events
+  # Allowlisted so the agent's proposals can name it; the OAuth scope stays
+  # read-only per D19 until calendar writes are actually wanted (§11), so an
+  # approved change fails at the provider until that scope is granted.
+  - google-calendar.update_event
+
+goal: >
+  Review this week's calendar for double-bookings or back-to-back meetings
+  with no travel time, and propose calendar changes that resolve them.
+
+steps:
+  - tool: google-calendar.list_events
+    args:
+      range: week
+    save_as: week_events
+
+budget:
+  max_tokens: 8000
+  max_wall_clock_seconds: 120
+  max_tool_calls: 10
+
+on_failure:
+  notify: display
+  retry: 0
+  escalate_after: 2
+
+output:
+  publish_to: pihome/jobs/conflict-finder/completed
+  speak: false
