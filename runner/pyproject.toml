@@ -1,6 +1,6 @@
 [project]
 name = "atlas"
-version = "0.1.0"
+version = "0.1.1"
 description = "atlas job runner: scheduled agentic jobs with approvals, budgets, and a passive ops board"
 readme = "README.md"
 requires-python = ">=3.12"

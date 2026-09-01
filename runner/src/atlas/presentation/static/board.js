@@ -347,7 +347,10 @@
   }
 
   function render(snapshot) {
-    text($("revision"), (snapshot.service && snapshot.service.revision) || "");
+    // Version and git revision, both from the running process. This is how
+    // you tell from across the room whether a deploy actually landed.
+    var service = snapshot.service || {};
+    text($("revision"), "v" + (service.version || "?") + " · " + (service.revision || "?"));
     var mode = (snapshot.service && snapshot.service.display_mode) || "OPS";
     var state = $("display-mode");
     text(state, mode.replace(/_/g, " "));
