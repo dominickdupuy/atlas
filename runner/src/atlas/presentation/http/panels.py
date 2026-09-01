@@ -85,3 +85,10 @@ class PanelRenderer:
     async def render_page(self) -> str:
         rendered = {name: await self.render(name) for name in PANEL_NAMES}
         return self._env.get_template("dashboard.html").render(panels=rendered)
+
+    def render_board(self) -> str:
+        """The passive ops board (D11). A static shell: it carries no
+        server-rendered state at all, because everything it draws arrives
+        from one /api/status poll. That is what lets it keep the last good
+        screen up, and label it as stale, when the API stops answering."""
+        return self._env.get_template("board.html").render()

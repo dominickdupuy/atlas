@@ -15,7 +15,15 @@ from fastapi.staticfiles import StaticFiles
 from atlas.bootstrap.container import Application
 from atlas.presentation.http.auth import BearerAuthMiddleware
 from atlas.presentation.http.panels import PanelRenderer
-from atlas.presentation.http.routers import approvals, dashboard, events, health, jobs
+from atlas.presentation.http.routers import (
+    approvals,
+    dashboard,
+    events,
+    health,
+    jobs,
+    status,
+)
+from atlas.presentation.http.status import StatusAssembler
 
 logger = logging.getLogger(__name__)
 
@@ -44,12 +52,14 @@ def create_app(application: Application) -> FastAPI:
     app = FastAPI(title="atlas", lifespan=lifespan, docs_url=None, redoc_url=None)
     app.state.application = application
     app.state.panels = PanelRenderer(application)
+    app.state.status = StatusAssembler(application)
 
     app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
     app.include_router(health.router)
     app.include_router(approvals.router)
     app.include_router(jobs.router)
     app.include_router(events.router)
+    app.include_router(status.router)
     app.include_router(dashboard.router)
 
     app.add_middleware(BearerAuthMiddleware, token=application.settings.api_token)

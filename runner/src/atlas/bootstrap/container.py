@@ -31,13 +31,16 @@ from atlas.jobs.infrastructure.sqlite_run_repo import SqliteJobRunRepository
 from atlas.jobs.infrastructure.subprocess_launcher import SubprocessJobLauncher
 from atlas.jobs.infrastructure.yaml_source import YamlJobDefinitionSource
 from atlas.persistence.db import Database
-from atlas.shared.clock import SystemClock
+from atlas.shared.build_info import git_revision, package_version
+from atlas.shared.clock import Clock, SystemClock
 from atlas.shared.events import InProcessEventBus
 from atlas.telemetry.application.display_mode import DisplayModeTracker
 from atlas.telemetry.application.health import HealthService
 from atlas.telemetry.application.publisher import MqttPublisherService
 from atlas.telemetry.application.stream import EventStream
 from atlas.telemetry.infrastructure.mqtt_bus import AiomqttEventBus
+from atlas.telemetry.infrastructure.service_probes import TcpServiceProbe
+from atlas.telemetry.infrastructure.system_metrics import SystemMetricsReader
 
 
 @dataclass
@@ -58,6 +61,12 @@ class Application:
     health: HealthService
     mqtt: AiomqttEventBus
     display_mode: DisplayModeTracker
+    clock: Clock
+    metrics: SystemMetricsReader
+    probes: tuple[TcpServiceProbe, ...]
+    started_at: datetime
+    version: str
+    revision: str
 
     async def start_persistence(self) -> None:
         """Connect + migrate, then seed derived state that lives in the DB."""
@@ -147,6 +156,11 @@ def build_application(settings: Settings) -> Application:
     scheduler = CronScheduler(catalog=catalog, clock=clock, on_due=on_due, timezone=settings.tz)
     scheduler_holder.append(scheduler)
 
+    probes = (
+        TcpServiceProbe("homeassistant", settings.homeassistant_host, settings.homeassistant_port),
+        TcpServiceProbe("mosquitto", settings.mqtt_host, settings.mqtt_port),
+    )
+
     mqtt = AiomqttEventBus(settings.mqtt_host, settings.mqtt_port)
     MqttPublisherService(bus, mqtt)
     health = HealthService(bus=bus, clock=clock)
@@ -169,4 +183,10 @@ def build_application(settings: Settings) -> Application:
         health=health,
         mqtt=mqtt,
         display_mode=display_mode,
+        clock=clock,
+        metrics=SystemMetricsReader(),
+        probes=probes,
+        started_at=clock.now(),
+        version=package_version(),
+        revision=git_revision(),
     )

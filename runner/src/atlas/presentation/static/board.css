@@ -1,0 +1,473 @@
+/*
+ * The passive ops board (D11).
+ *
+ * Sizing is in vw/vh throughout, not px: the board is read from across a
+ * room, and the only thing that matters is how much of the screen a line of
+ * text occupies. At 1080p, 1vw = 19.2px, so the 1.05vw body text lands at
+ * about 20px and the alert headlines at roughly 34px.
+ *
+ * The page is exactly one viewport tall with overflow hidden. Nothing may
+ * scroll, because there is no input device to scroll it with; anything that
+ * would overflow is truncated server-side and reported as a count.
+ */
+
+:root {
+  --bg: #080b10;
+  --panel: #121820;
+  --panel-edge: #1f2a37;
+  --ink: #e6edf3;
+  --ink-dim: #8b949e;
+  --ok: #3fb950;
+  --warn: #ffb020;
+  --crit: #ff4d4f;
+  --accent: #58a6ff;
+
+  --gap: 0.7vw;
+  --radius: 0.5vw;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Inter", "DejaVu Sans", system-ui, sans-serif;
+  font-size: 1.05vw;
+  line-height: 1.35;
+  display: flex;
+  flex-direction: column;
+  /* No pointer exists; make sure a stray USB mouse cannot leave a cursor
+     burned into a screen that runs 24/7. */
+  cursor: none;
+  user-select: none;
+}
+
+/* --- top bar ------------------------------------------------------------ */
+
+.bar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0.8vw 1.2vw 0.5vw;
+  gap: var(--gap);
+}
+
+.identity {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6vw;
+}
+
+.wordmark {
+  font-size: 2vw;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.rev {
+  font-family: ui-monospace, "DejaVu Sans Mono", monospace;
+  font-size: 0.85vw;
+  color: var(--ink-dim);
+}
+
+.state {
+  font-size: 1.5vw;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  padding: 0.15vw 0.9vw;
+  border-radius: var(--radius);
+  border: 0.12vw solid var(--panel-edge);
+  color: var(--ink-dim);
+}
+
+.state[data-mode="APPROVAL_PENDING"] {
+  color: #07100a;
+  background: var(--warn);
+  border-color: var(--warn);
+}
+
+.clock {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.clock-label {
+  display: block;
+  font-size: 0.75vw;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+.clock-value {
+  font-size: 1.35vw;
+  font-weight: 600;
+}
+
+/* --- staleness banner ---------------------------------------------------- */
+
+/*
+ * The most important rule on the page. A board that has silently stopped
+ * updating looks exactly like a healthy one, so when the poll fails the
+ * whole screen must visibly change, not just a corner of it.
+ */
+
+.staleness {
+  display: flex;
+  align-items: baseline;
+  gap: 1vw;
+  margin: 0 1.2vw 0.4vw;
+  padding: 0.55vw 1vw;
+  border-radius: var(--radius);
+  background: var(--crit);
+  color: #140606;
+}
+
+.staleness-title {
+  font-size: 1.5vw;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+.staleness-detail {
+  font-size: 1.15vw;
+  font-weight: 600;
+}
+
+body[data-stale="true"] main {
+  /* Dim the data itself: everything below is, by definition, no longer
+     known to be true. */
+  opacity: 0.45;
+  filter: grayscale(0.7);
+}
+
+/* --- layout -------------------------------------------------------------- */
+
+.grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1.55fr 1fr;
+  grid-template-rows: minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, 0.85fr);
+  gap: var(--gap);
+  padding: 0 1.2vw 1vw;
+}
+
+.panel {
+  background: var(--panel);
+  border: 0.1vw solid var(--panel-edge);
+  border-radius: var(--radius);
+  padding: 0.7vw 1vw 0.8vw;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.panel h2 {
+  margin: 0 0 0.5vw;
+  font-size: 0.9vw;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+.panel h2 .count {
+  color: var(--ink);
+}
+
+/* Attention spans the full height of the left column: it is the reason the
+   screen exists (D11), so it gets the space and the top-left corner. */
+.panel-alerts {
+  grid-column: 1;
+  grid-row: 1;
+}
+.panel-runs {
+  grid-column: 1;
+  grid-row: 2 / span 2;
+}
+.panel-approvals {
+  grid-column: 2;
+  grid-row: 1;
+}
+.panel-mode {
+  grid-column: 2;
+  grid-row: 2;
+}
+.panel-containers {
+  grid-column: 2;
+  grid-row: 3;
+}
+.panel-system {
+  grid-column: 1 / span 2;
+  grid-row: 4;
+}
+
+.grid {
+  grid-template-rows: minmax(0, 1.1fr) minmax(0, 0.95fr) minmax(0, 0.95fr) auto;
+}
+
+ul,
+ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.empty {
+  margin: 0.2vw 0 0;
+  color: var(--ink-dim);
+  font-size: 1vw;
+}
+
+.more {
+  margin: 0.4vw 0 0;
+  color: var(--warn);
+  font-size: 0.95vw;
+  font-weight: 700;
+}
+
+.hint {
+  margin: auto 0 0;
+  font-size: 0.8vw;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+/* --- alerts -------------------------------------------------------------- */
+
+.alerts li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.7vw;
+  padding: 0.35vw 0;
+  border-bottom: 0.06vw solid rgba(255, 255, 255, 0.06);
+}
+
+.alerts li:last-child {
+  border-bottom: 0;
+}
+
+.alert-summary {
+  font-size: 1.45vw;
+  font-weight: 700;
+}
+
+.alert-detail {
+  font-size: 0.95vw;
+  color: var(--ink-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.alert-at {
+  font-size: 0.95vw;
+  color: var(--ink-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+li[data-severity="critical"] .alert-summary {
+  color: var(--crit);
+}
+
+li[data-severity="warning"] .alert-summary {
+  color: var(--warn);
+}
+
+/* --- approvals ----------------------------------------------------------- */
+
+.approvals li {
+  padding: 0.3vw 0;
+  font-size: 1.1vw;
+  border-bottom: 0.06vw solid rgba(255, 255, 255, 0.06);
+}
+
+.approvals li:last-child {
+  border-bottom: 0;
+}
+
+.approval-summary {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.approval-meta {
+  font-size: 0.8vw;
+  color: var(--ink-dim);
+}
+
+/* --- authority / mode ---------------------------------------------------- */
+
+.mode-headline {
+  font-size: 1.9vw;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.mode-block[data-write="true"] .mode-headline {
+  color: var(--crit);
+}
+
+.mode-block[data-write="false"] .mode-headline {
+  color: var(--ok);
+}
+
+.mode-detail {
+  font-size: 0.95vw;
+  color: var(--ink-dim);
+  margin-top: 0.2vw;
+}
+
+.service-line {
+  margin-top: auto;
+  font-size: 0.9vw;
+  color: var(--ink-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- runs table ---------------------------------------------------------- */
+
+.runs {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.runs td {
+  padding: 0.28vw 0.3vw;
+  font-size: 1.05vw;
+  border-bottom: 0.06vw solid rgba(255, 255, 255, 0.05);
+  white-space: nowrap;
+}
+
+.runs .job {
+  font-weight: 600;
+  max-width: 22vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.runs .tier,
+.runs .duration,
+.runs .when {
+  color: var(--ink-dim);
+  text-align: right;
+}
+
+.runs .state {
+  font-size: 0.85vw;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  border: 0;
+  padding: 0;
+  color: var(--ink-dim);
+}
+
+.runs tr[data-state="completed"] .state {
+  color: var(--ok);
+}
+.runs tr[data-state="failed"] .state,
+.runs tr[data-state="timed_out"] .state {
+  color: var(--crit);
+}
+.runs tr[data-state="awaiting_approval"] .state {
+  color: var(--warn);
+}
+.runs tr[data-state="running"] .state {
+  color: var(--accent);
+}
+
+/* --- containers ---------------------------------------------------------- */
+
+.containers li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6vw;
+  padding: 0.3vw 0;
+  font-size: 1.15vw;
+}
+
+.dot {
+  width: 0.8vw;
+  height: 0.8vw;
+  border-radius: 50%;
+  background: var(--ink-dim);
+  flex: 0 0 auto;
+}
+
+li[data-up="true"] .dot {
+  background: var(--ok);
+}
+
+li[data-up="false"] .dot {
+  background: var(--crit);
+}
+
+li[data-up="false"] .container-name {
+  color: var(--crit);
+  font-weight: 700;
+}
+
+.container-detail {
+  margin-left: auto;
+  font-size: 0.85vw;
+  color: var(--ink-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 60%;
+}
+
+/* --- system strip -------------------------------------------------------- */
+
+.system {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 0.8vw;
+  margin: 0;
+}
+
+.system .metric {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1vw;
+}
+
+.system dt {
+  font-size: 0.72vw;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+.system dd {
+  margin: 0;
+  font-size: 1.5vw;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.system dd[data-level="warn"] {
+  color: var(--warn);
+}
+
+.system dd[data-level="crit"] {
+  color: var(--crit);
+}

@@ -64,6 +64,10 @@ class Settings(BaseSettings):
     mqtt_host: str = "127.0.0.1"
     mqtt_port: int = 1883
 
+    # Probed for the board's container-health panel; never written to.
+    homeassistant_host: str = "127.0.0.1"
+    homeassistant_port: int = 8123
+
     daily_ceiling_usd: str = "5.00"
     model: str = "claude-sonnet-5"
     price_input_per_mtok: str | None = None

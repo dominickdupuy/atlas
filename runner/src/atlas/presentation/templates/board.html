@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en" data-atlas-board>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>atlas ops board</title>
+    <link rel="stylesheet" href="/static/board.css" />
+  </head>
+  <body>
+    <!--
+      The passive operations board (D11). Output only: this markup contains
+      no button, link, or form, because the monitor it renders on has no
+      input device. Approvals happen on the phone (D8); the queue is shown
+      here for visibility and nothing more.
+    -->
+    <header class="bar">
+      <div class="identity">
+        <span class="wordmark">atlas</span>
+        <span class="rev" id="revision">—</span>
+      </div>
+      <div class="state" id="display-mode">STARTING</div>
+      <div class="clock">
+        <span class="clock-label">updated</span>
+        <span class="clock-value" id="last-updated">never</span>
+      </div>
+    </header>
+
+    <div class="staleness" id="staleness" hidden>
+      <span class="staleness-title" id="staleness-title">STALE DATA</span>
+      <span class="staleness-detail" id="staleness-detail"></span>
+    </div>
+
+    <main class="grid">
+      <section class="panel panel-alerts" id="panel-alerts">
+        <h2>Attention</h2>
+        <ul class="alerts" id="alerts"></ul>
+        <p class="empty" id="alerts-empty">nothing needs attention</p>
+        <p class="more" id="alerts-more" hidden></p>
+      </section>
+
+      <section class="panel panel-approvals">
+        <h2>Pending approvals <span class="count" id="approvals-count">0</span></h2>
+        <ul class="approvals" id="approvals"></ul>
+        <p class="empty" id="approvals-empty">queue empty</p>
+        <p class="more" id="approvals-more" hidden></p>
+        <p class="hint">approve on phone</p>
+      </section>
+
+      <section class="panel panel-mode">
+        <h2>Authority</h2>
+        <div class="mode-block" id="mode-block">
+          <div class="mode-headline" id="mode-headline">—</div>
+          <div class="mode-detail" id="mode-detail"></div>
+        </div>
+        <div class="service-line" id="service-line">—</div>
+      </section>
+
+      <section class="panel panel-runs">
+        <h2>Recent runs</h2>
+        <table class="runs">
+          <tbody id="runs"></tbody>
+        </table>
+        <p class="empty" id="runs-empty">no runs recorded</p>
+      </section>
+
+      <section class="panel panel-containers">
+        <h2>Services</h2>
+        <ul class="containers" id="containers"></ul>
+      </section>
+
+      <section class="panel panel-system">
+        <h2>Host</h2>
+        <dl class="system" id="system"></dl>
+      </section>
+    </main>
+
+    <script src="/static/board.js"></script>
+  </body>
+</html>
