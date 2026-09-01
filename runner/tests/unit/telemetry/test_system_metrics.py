@@ -8,6 +8,7 @@ be got quietly wrong.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from atlas.telemetry.infrastructure.system_metrics import (
@@ -120,7 +121,8 @@ def test_reader_assembles_a_full_snapshot(tmp_path: Path) -> None:
     assert metrics.mem_total_bytes == 8251776 * 1024
     assert metrics.wifi is not None and metrics.wifi.signal_dbm == -47.0
     assert metrics.disk_total_bytes is not None and metrics.disk_total_bytes > 0
-    assert metrics.load_1 is not None
+    # Windows has no getloadavg; the reader reports None rather than raising.
+    assert metrics.load_1 is not None or not hasattr(os, "getloadavg")
 
 
 def test_reader_degrades_instead_of_raising(tmp_path: Path) -> None:

@@ -191,8 +191,14 @@ class SystemMetricsReader:
         return parse_wireless(text, self._interface) if text else None
 
     def _loadavg(self) -> tuple[float | None, float | None, float | None]:
+        # os.getloadavg does not exist on Windows at all, and the CI matrix
+        # runs there to keep the spawn-based job executor honest. An
+        # AttributeError here would 500 the whole status endpoint.
+        getloadavg = getattr(os, "getloadavg", None)
+        if getloadavg is None:
+            return None, None, None
         try:
-            one, five, fifteen = os.getloadavg()
+            one, five, fifteen = getloadavg()
         except OSError:
             return None, None, None
         return one, five, fifteen

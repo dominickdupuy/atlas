@@ -56,3 +56,28 @@ jobs:
           enable-cache: true
       - run: uv sync --frozen
       - run: uv run atlas validate-jobs --jobs-dir ../jobs
+
+  # Fast-forward `release` to a green main. The Pi's deploy timer watches that
+  # branch (scripts/deploy.sh), so merging to main is what ships -- and it can
+  # only ship code that passed every job above.
+  release:
+    needs: [lint, typecheck, test, validate-jobs]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      # The default GITHUB_TOKEN is read-only; updating a branch needs write.
+      contents: write
+    defaults:
+      run:
+        # Overrides the workflow-level `runner` default: this job is git
+        # plumbing at the repository root, not a Python build.
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Fast-forward release to main
+        # No --force. A non-fast-forward push fails loudly, which is the
+        # correct outcome: it means release carries a commit main does not,
+        # and the Pi would otherwise be rolled back to something unreviewed.
+        run: git push origin HEAD:refs/heads/release
