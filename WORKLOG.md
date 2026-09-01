@@ -384,6 +384,30 @@ to 14px — on a wall the bezel already supplies the margin. Weather card is
 roughly three times its old height; RUNS takes the remainder and is
 correspondingly shorter.
 
+## 2026-09-01 16:35 — UV overlaid on the rain profile
+
+Rain chance (bars, right axis 0-100%) and UV (line, left axis 0-12) now share
+one hourly chart per day. They belong on the same x-axis because the question
+is a single one — when today will it rain on me, and when is the sun worst —
+and reading that off two charts means doing the alignment in your head from
+across a room.
+
+Axis ticks are tinted to their series so the pairing needs no legend, and the
+tick column spans the exact plot height: a "12" that does not line up with the
+top gridline is decoration, not an axis.
+
+The chart is no longer gated on rain. It was, when it only showed
+precipitation; a dry day still has a UV curve worth seeing, so hourly data now
+ships for both days.
+
+`HourlyPrecipitation` renamed to `HourlyConditions` — it carries UV now, and a
+name that says otherwise is a small lie that costs someone an afternoon later.
+
+**Location** pinned to ZIP 32601 (29.6516, -82.3248). Verified the API resolves
+that to grid point 29.666, -82.336, elevation 59 m, timezone
+America/New_York — i.e. actually Gainesville, not silently snapped to a
+neighbouring cell.
+
 ## Running log
 
 ### 23:51 — Orientation

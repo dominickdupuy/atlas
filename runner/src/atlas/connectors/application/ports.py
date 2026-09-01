@@ -59,12 +59,18 @@ class WeatherPort(Protocol):
     async def get_forecast(self, latitude: float, longitude: float) -> Forecast: ...
 
 
-class HourlyPrecipitation(BaseModel):
+class HourlyConditions(BaseModel):
+    """One hour of the day: rain chance, rain amount, and UV.
+
+    The board overlays UV on the precipitation profile, so they have to
+    travel together on the same hourly grid."""
+
     model_config = ConfigDict(frozen=True)
 
     time: datetime
     probability_pct: int
     millimetres: float
+    uv_index: float = 0.0
 
 
 class DayForecast(BaseModel):
@@ -77,7 +83,7 @@ class DayForecast(BaseModel):
     uv_index_max: float | None = None
     precipitation_probability_pct: int = 0
     precipitation_mm: float = 0.0
-    hourly: tuple[HourlyPrecipitation, ...] = ()
+    hourly: tuple[HourlyConditions, ...] = ()
 
     @property
     def is_wet(self) -> bool:

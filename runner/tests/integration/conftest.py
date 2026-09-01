@@ -14,7 +14,7 @@ from httpx import ASGITransport, AsyncClient
 
 from atlas.bootstrap.container import Application, build_application
 from atlas.config import Settings
-from atlas.connectors.application.ports import DayForecast, HourlyPrecipitation, WeatherReport
+from atlas.connectors.application.ports import DayForecast, HourlyConditions, WeatherReport
 from atlas.presentation.http.app import create_app
 
 FIXTURE_JOBS = Path(__file__).parent.parent / "fixtures" / "jobs"
@@ -37,10 +37,11 @@ SAMPLE_WEATHER = WeatherReport(
             precipitation_probability_pct=40,
             precipitation_mm=4.3,
             hourly=tuple(
-                HourlyPrecipitation(
+                HourlyConditions(
                     time=datetime(2026, 9, 1, hour, tzinfo=UTC),
                     probability_pct=hour * 2,
                     millimetres=0.5 if hour > 12 else 0.0,
+                    uv_index=max(0.0, 7.0 - abs(13 - hour)),
                 )
                 for hour in range(24)
             ),
@@ -53,6 +54,15 @@ SAMPLE_WEATHER = WeatherReport(
             uv_index_max=6.05,
             precipitation_probability_pct=5,
             precipitation_mm=0.0,
+            hourly=tuple(
+                HourlyConditions(
+                    time=datetime(2026, 9, 2, hour, tzinfo=UTC),
+                    probability_pct=2,
+                    millimetres=0.0,
+                    uv_index=max(0.0, 6.0 - abs(13 - hour)),
+                )
+                for hour in range(24)
+            ),
         ),
     ),
 )

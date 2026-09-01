@@ -417,12 +417,26 @@
     return box;
   }
 
+  var UV_SCALE_MAX = 12;
+
+  function svgEl(tag, attrs) {
+    var node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    Object.keys(attrs).forEach(function (key) {
+      node.setAttribute(key, attrs[key]);
+    });
+    return node;
+  }
+
   /*
-   * Hourly rain profile for a wet day. "40% chance" does not tell you whether
-   * to leave at 2pm or at 6pm; the shape does. Bars are probability, and an
-   * hour with measurable rain is drawn solid.
+   * Two series on one hourly grid: rain chance as bars against the right
+   * axis (0-100%), UV as a line against the left axis (0-12).
+   *
+   * They share an x-axis because the question is a single one — "when today
+   * is it going to rain on me, and when will the sun be worst" — and reading
+   * that off two separate charts means doing the alignment in your head from
+   * across a room.
    */
-  function precipChart(hourly) {
+  function conditionsChart(hourly) {
     var wrap = el("div");
     var visible = hourly.filter(function (h) {
       return h.hour >= 6 && h.hour <= 22;
@@ -430,21 +444,67 @@
     if (!visible.length) return wrap;
 
     var chart = el("div", "wx-chart");
+
+    // Titles live in their own row so the ticks can span the exact height of
+    // the plot: a "12" that does not line up with the top gridline is
+    // decoration, not an axis.
+    chart.appendChild(el("span", "wx-ax-title wx-title-left", "UV"));
+    chart.appendChild(el("span", null, ""));
+    chart.appendChild(el("span", "wx-ax-title wx-title-right", "RAIN"));
+
+    var left = el("div", "wx-ax wx-ax-left");
+    [12, 8, 4, 0].forEach(function (tick) {
+      left.appendChild(el("span", null, tick));
+    });
+    chart.appendChild(left);
+
+    var plot = el("div", "wx-plot");
+    var bars = el("div", "wx-bars");
     visible.forEach(function (h) {
       var bar = el("div", "wx-bar");
       bar.setAttribute("data-wet", h.millimetres > 0.05 ? "true" : "false");
       var fill = el("i");
-      fill.style.height = Math.max(2, h.probability_pct) + "%";
+      fill.style.height = Math.max(1.5, h.probability_pct) + "%";
       bar.appendChild(fill);
-      chart.appendChild(bar);
+      bars.appendChild(bar);
     });
-    wrap.appendChild(chart);
+    plot.appendChild(bars);
+
+    // preserveAspectRatio=none lets the polyline stretch to the plot box;
+    // non-scaling-stroke keeps the line from stretching with it.
+    var svg = svgEl("svg", {
+      class: "wx-uv",
+      viewBox: "0 0 100 100",
+      preserveAspectRatio: "none",
+    });
+    var step = 100 / visible.length;
+    var points = visible
+      .map(function (h, index) {
+        var x = index * step + step / 2;
+        var uv = Math.max(0, Math.min(UV_SCALE_MAX, h.uv_index || 0));
+        var y = 100 - (uv / UV_SCALE_MAX) * 100;
+        return x.toFixed(2) + "," + y.toFixed(2);
+      })
+      .join(" ");
+    svg.appendChild(
+      svgEl("polyline", { points: points, class: "wx-uv-line", "vector-effect": "non-scaling-stroke" })
+    );
+    plot.appendChild(svg);
+    chart.appendChild(plot);
+
+    var right = el("div", "wx-ax wx-ax-right");
+    ["100%", "50%", "0"].forEach(function (tick) {
+      right.appendChild(el("span", null, tick));
+    });
+    chart.appendChild(right);
 
     var axis = el("div", "wx-axis");
     ["6 AM", "NOON", "6 PM", "10 PM"].forEach(function (label) {
       axis.appendChild(el("span", null, label));
     });
-    wrap.appendChild(axis);
+    chart.appendChild(axis);
+
+    wrap.appendChild(chart);
     return wrap;
   }
 
@@ -476,8 +536,8 @@
     metrics.appendChild(metric("rainfall", day.precipitation_mm.toFixed(1), "mm"));
     box.appendChild(metrics);
 
-    if (day.is_wet && day.hourly && day.hourly.length) {
-      box.appendChild(precipChart(day.hourly));
+    if (day.hourly && day.hourly.length) {
+      box.appendChild(conditionsChart(day.hourly));
     }
     return box;
   }

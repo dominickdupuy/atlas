@@ -324,15 +324,16 @@ async def test_weather_reports_two_days_with_uv_and_precipitation(
     assert today["is_wet"] is True
 
 
-async def test_hourly_precipitation_only_ships_for_a_wet_day(client: AsyncClient) -> None:
-    """The profile is worth its payload, and its space on the card, only when
-    it is actually going to rain."""
+async def test_hourly_conditions_ship_for_every_day(client: AsyncClient) -> None:
+    """UV rides on the same chart as rain, and a dry day still has a UV curve
+    worth seeing — so the hourly grid is no longer gated on rain."""
     body = (await client.get("/api/status", headers=AUTH)).json()
 
     today, tomorrow = body["weather"]["days"]
     assert len(today["hourly"]) == 24
     assert tomorrow["is_wet"] is False
-    assert tomorrow["hourly"] == []
+    assert len(tomorrow["hourly"]) == 24, "a dry day still carries its UV curve"
+    assert all("uv_index" in hour for hour in today["hourly"])
 
 
 async def test_a_failed_forecast_reports_unavailable_rather_than_numbers(

@@ -179,6 +179,7 @@ class WeatherHour(_Frozen):
     hour: int
     probability_pct: int
     millimetres: float
+    uv_index: float
 
 
 class WeatherDay(_Frozen):
@@ -490,20 +491,17 @@ class StatusAssembler:
                     precipitation_probability_pct=day.precipitation_probability_pct,
                     precipitation_mm=day.precipitation_mm,
                     is_wet=day.is_wet,
-                    # The hourly profile is only worth its payload, and its
-                    # space on the card, on a day that is actually wet.
-                    hourly=(
-                        [
-                            WeatherHour(
-                                hour=hour.time.hour,
-                                probability_pct=hour.probability_pct,
-                                millimetres=hour.millimetres,
-                            )
-                            for hour in day.hourly
-                        ]
-                        if day.is_wet
-                        else []
-                    ),
+                    # Shipped for every day now that UV rides on the same
+                    # chart: a dry day still has a UV curve worth seeing.
+                    hourly=[
+                        WeatherHour(
+                            hour=hour.time.hour,
+                            probability_pct=hour.probability_pct,
+                            millimetres=hour.millimetres,
+                            uv_index=hour.uv_index,
+                        )
+                        for hour in day.hourly
+                    ],
                 )
             )
 

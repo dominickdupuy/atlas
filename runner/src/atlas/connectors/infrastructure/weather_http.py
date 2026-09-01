@@ -12,7 +12,7 @@ import httpx
 from atlas.connectors.application.ports import (
     DayForecast,
     Forecast,
-    HourlyPrecipitation,
+    HourlyConditions,
     WeatherReport,
 )
 from atlas.shared.clock import Clock, SystemClock
@@ -152,17 +152,18 @@ def _as_int(value: object) -> int | None:
     return int(value) if isinstance(value, int | float) else None
 
 
-def _hourly_for(data: dict[str, object], day: str) -> tuple[HourlyPrecipitation, ...]:
+def _hourly_for(data: dict[str, object], day: str) -> tuple[HourlyConditions, ...]:
     hourly = data.get("hourly")
     if not isinstance(hourly, dict):
         return ()
     times = hourly.get("time") or []
     probabilities = hourly.get("precipitation_probability") or []
     amounts = hourly.get("precipitation") or []
+    uv_values = hourly.get("uv_index") or []
     if not isinstance(times, list):
         return ()
 
-    rows: list[HourlyPrecipitation] = []
+    rows: list[HourlyConditions] = []
     for index, stamp in enumerate(times):
         if not isinstance(stamp, str) or not stamp.startswith(day):
             continue
@@ -172,11 +173,13 @@ def _hourly_for(data: dict[str, object], day: str) -> tuple[HourlyPrecipitation,
             continue
         probability = probabilities[index] if index < len(probabilities) else 0
         amount = amounts[index] if index < len(amounts) else 0.0
+        uv = uv_values[index] if index < len(uv_values) else 0.0
         rows.append(
-            HourlyPrecipitation(
+            HourlyConditions(
                 time=when,
                 probability_pct=_as_int(probability) or 0,
                 millimetres=_as_float(amount) or 0.0,
+                uv_index=_as_float(uv) or 0.0,
             )
         )
     return tuple(rows)

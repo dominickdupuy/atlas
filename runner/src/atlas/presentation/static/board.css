@@ -904,22 +904,72 @@ body[data-stale="true"] .head-right .pill {
   color: var(--red);
 }
 
-/* Hourly rain profile. Drawn only on a wet day: "40%" says nothing about
-   whether to leave at 2pm or 6pm, and the shape does. */
+/* Dual-axis hourly chart: rain chance as bars (right axis, 0-100%) with the
+   UV curve laid over it (left axis, 0-12). Axis labels are tinted to their
+   series so the pairing needs no legend. */
 .wx-chart {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-rows: auto 84px auto;
+  column-gap: 7px;
+  align-items: stretch;
+}
+
+.wx-ax {
   display: flex;
-  align-items: flex-end;
-  gap: 2px;
-  height: 74px;
-  padding: 6px 2px 0;
+  flex-direction: column;
+  justify-content: space-between;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  padding: 1px 0 2px;
+}
+
+.wx-ax-left {
+  color: rgba(255, 159, 10, 0.75);
+}
+
+.wx-ax-right {
+  color: rgba(100, 210, 255, 0.75);
+  text-align: left;
+}
+
+.wx-ax-title {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  padding-bottom: 2px;
+}
+
+.wx-title-left {
+  color: rgba(255, 159, 10, 0.9);
+  text-align: right;
+}
+
+.wx-title-right {
+  color: rgba(100, 210, 255, 0.9);
+  text-align: left;
+}
+
+.wx-plot {
+  position: relative;
   border-radius: 9px;
   background: rgba(10, 132, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+
+.wx-bars {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 0 2px;
 }
 
 .wx-bar {
   flex: 1;
-  position: relative;
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -929,21 +979,41 @@ body[data-stale="true"] .head-right .pill {
 .wx-bar i {
   display: block;
   border-radius: 2px 2px 0 0;
-  background: linear-gradient(180deg, #64d2ff, rgba(10, 132, 255, 0.55));
+  background: rgba(100, 210, 255, 0.35);
   min-height: 1px;
 }
 
+/* An hour with measurable rain, not just a chance of it. */
 .wx-bar[data-wet="true"] i {
-  background: linear-gradient(180deg, #0a84ff, rgba(10, 132, 255, 0.7));
+  background: linear-gradient(180deg, #0a84ff, rgba(10, 132, 255, 0.75));
+}
+
+.wx-uv {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.wx-uv-line {
+  fill: none;
+  stroke: var(--orange);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 4px rgba(255, 159, 10, 0.5));
 }
 
 .wx-axis {
+  grid-column: 2;
+  grid-row: 3;
   display: flex;
   justify-content: space-between;
   font-size: 11px;
   color: var(--ink-42);
   font-variant-numeric: tabular-nums;
-  padding: 0 2px;
+  padding: 3px 2px 0;
 }
 
 .wx-unavailable {
