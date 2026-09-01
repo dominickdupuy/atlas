@@ -19,6 +19,13 @@ ENV_FILE="${ATLAS_ENV_FILE:-$HOME/.config/atlas/atlas.env}"
 RUNTIME_DIR="${ATLAS_KIOSK_RUNTIME:-/dev/shm/atlas-kiosk}"
 mkdir -p "$RUNTIME_DIR/cache" "$RUNTIME_DIR/profile"
 
+# A Chromium killed rather than closed leaves SingletonLock pointing at a dead
+# pid; the next start then tries to hand the URL to that corpse and exits
+# silently, leaving a desktop on the wall instead of the board. The profile is
+# disposable tmpfs, so clearing the locks unconditionally is safe and is the
+# difference between a kiosk that survives a crash and one that does not.
+rm -f "$RUNTIME_DIR/profile"/Singleton* 2>/dev/null || true
+
 log() { printf '%s kiosk: %s\n' "$(date -Is)" "$*"; }
 
 # Wait for the API rather than sleeping a fixed interval: the white-screen
@@ -51,6 +58,11 @@ exec /usr/bin/chromium \
   --disk-cache-size=52428800 \
   --no-first-run \
   --no-default-browser-check \
+  --disable-background-networking \
+  --disable-component-update \
+  --disable-sync \
+  --disable-domain-reliability \
+  --disable-breakpad \
   --noerrdialogs \
   --disable-infobars \
   --disable-session-crashed-bubble \
