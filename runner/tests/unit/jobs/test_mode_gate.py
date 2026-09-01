@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pihome.jobs.domain import policies
+from atlas.jobs.domain import policies
 from tests.factories import (
     ok_report,
     proposal,
@@ -36,7 +36,7 @@ def test_propose_with_nothing_to_propose_just_publishes() -> None:
 
 
 def test_write_routes_to_execution() -> None:
-    from pihome.jobs.domain.definition import JobDefinition
+    from atlas.jobs.domain.definition import JobDefinition
 
     definition = JobDefinition.model_validate(
         tier1_spec(

@@ -7,8 +7,8 @@ COPY --from=uv /uv /uvx /usr/local/bin/
 
 # Non-root; /data is the SQLite volume mount point (compose maps a named
 # volume here, which inherits this ownership on first use).
-RUN groupadd -r pihome && useradd -r -g pihome -m -d /app pihome \
-    && mkdir /data && chown pihome:pihome /data
+RUN groupadd -r atlas && useradd -r -g atlas -m -d /app atlas \
+    && mkdir /data && chown atlas:atlas /data
 
 WORKDIR /app
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
@@ -19,9 +19,9 @@ RUN uv sync --frozen --no-dev --no-install-project
 
 COPY README.md ./
 COPY src ./src
-RUN uv sync --frozen --no-dev && chown -R pihome:pihome /app
+RUN uv sync --frozen --no-dev && chown -R atlas:atlas /app
 
-USER pihome
+USER atlas
 ENV PATH="/app/.venv/bin:$PATH"
 EXPOSE 8100
-CMD ["python", "-m", "pihome", "serve"]
+CMD ["python", "-m", "atlas", "serve"]

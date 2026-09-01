@@ -1,5 +1,5 @@
-# pihome runner
+# atlas runner
 
-The pi-home modular monolith: scheduler, tier executors, approvals, budget,
+The atlas modular monolith: scheduler, tier executors, approvals, budget,
 connectors, telemetry, and the ops board. Architecture: `../docs/architecture.md`
 (D5, D14, D16, D17, D18). Dev workflow: repo-root `README.md`.

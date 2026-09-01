@@ -55,4 +55,4 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --frozen
-      - run: uv run pihome validate-jobs --jobs-dir ../jobs
+      - run: uv run atlas validate-jobs --jobs-dir ../jobs

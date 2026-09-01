@@ -4,15 +4,15 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from pihome.approvals.domain.approval import Approval, ApprovalState, Decision
-from pihome.approvals.infrastructure.sqlite_repo import SqliteApprovalRepository
-from pihome.budget.domain.ledger import LedgerEntry, UsdMicros
-from pihome.budget.infrastructure.sqlite_repo import SqliteBudgetLedgerRepository
-from pihome.jobs.domain.run import JobRun, RunState
-from pihome.jobs.infrastructure.sqlite_run_repo import SqliteJobRunRepository
-from pihome.persistence.db import Database
-from pihome.shared.clock import FrozenClock
-from pihome.shared.ids import JobId, new_approval_id, new_entry_id, new_run_id
+from atlas.approvals.domain.approval import Approval, ApprovalState, Decision
+from atlas.approvals.infrastructure.sqlite_repo import SqliteApprovalRepository
+from atlas.budget.domain.ledger import LedgerEntry, UsdMicros
+from atlas.budget.infrastructure.sqlite_repo import SqliteBudgetLedgerRepository
+from atlas.jobs.domain.run import JobRun, RunState
+from atlas.jobs.infrastructure.sqlite_run_repo import SqliteJobRunRepository
+from atlas.persistence.db import Database
+from atlas.shared.clock import FrozenClock
+from atlas.shared.ids import JobId, new_approval_id, new_entry_id, new_run_id
 from tests.factories import ok_report, proposal, tier1_definition, usage
 
 

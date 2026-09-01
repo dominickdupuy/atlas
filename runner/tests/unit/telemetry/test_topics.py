@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from pihome.approvals.domain.events import ApprovalDecided, ApprovalExpired, ApprovalRequested
-from pihome.budget.domain.events import BudgetStatusChanged
-from pihome.budget.domain.ledger import usd
-from pihome.budget.domain.policy import evaluate
-from pihome.jobs.domain.events import JobRunCompleted, JobRunFailed, JobRunStarted
-from pihome.shared.ids import ApprovalId, JobId, RunId
-from pihome.telemetry.domain.topics import DisplayModeChanged, SystemHealth, envelope_for
+from atlas.approvals.domain.events import ApprovalDecided, ApprovalExpired, ApprovalRequested
+from atlas.budget.domain.events import BudgetStatusChanged
+from atlas.budget.domain.ledger import usd
+from atlas.budget.domain.policy import evaluate
+from atlas.jobs.domain.events import JobRunCompleted, JobRunFailed, JobRunStarted
+from atlas.shared.ids import ApprovalId, JobId, RunId
+from atlas.telemetry.domain.topics import DisplayModeChanged, SystemHealth, envelope_for
 
 NOW = datetime(2026, 8, 24, 12, 0, tzinfo=UTC)
 JOB = JobId("morning-briefing")
@@ -22,26 +22,26 @@ def test_job_lifecycle_topics() -> None:
         JobRunStarted(occurred_at=NOW, job_id=JOB, run_id=RUN, tier=2, mode="read", attempt=1)
     )
     assert started is not None
-    assert started.topic == "pihome/jobs/morning-briefing/started"
+    assert started.topic == "atlas/jobs/morning-briefing/started"
 
     failed = envelope_for(
         JobRunFailed(occurred_at=NOW, job_id=JOB, run_id=RUN, error="x", escalate=True)
     )
     assert failed is not None
-    assert failed.topic == "pihome/jobs/morning-briefing/failed"
+    assert failed.topic == "atlas/jobs/morning-briefing/failed"
     assert failed.payload["escalate"] is True
 
 
 def test_completed_respects_publish_to_override() -> None:
     default = envelope_for(JobRunCompleted(occurred_at=NOW, job_id=JOB, run_id=RUN))
     assert default is not None
-    assert default.topic == "pihome/jobs/morning-briefing/completed"
+    assert default.topic == "atlas/jobs/morning-briefing/completed"
 
     overridden = envelope_for(
-        JobRunCompleted(occurred_at=NOW, job_id=JOB, run_id=RUN, publish_to="pihome/custom")
+        JobRunCompleted(occurred_at=NOW, job_id=JOB, run_id=RUN, publish_to="atlas/custom")
     )
     assert overridden is not None
-    assert overridden.topic == "pihome/custom"
+    assert overridden.topic == "atlas/custom"
 
 
 def test_approval_outcome_topics() -> None:
@@ -89,6 +89,6 @@ def test_singleton_topics() -> None:
     )
     mode = envelope_for(DisplayModeChanged(occurred_at=NOW, mode="OPS"))
     health = envelope_for(SystemHealth(occurred_at=NOW, healthy=True, detail={}))
-    assert budget is not None and budget.topic == "pihome/budget/status"
-    assert mode is not None and mode.topic == "pihome/display/mode"
-    assert health is not None and health.topic == "pihome/system/health"
+    assert budget is not None and budget.topic == "atlas/budget/status"
+    assert mode is not None and mode.topic == "atlas/display/mode"
+    assert health is not None and health.topic == "atlas/system/health"

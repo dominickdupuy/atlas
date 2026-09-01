@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from pihome.jobs.domain.run import JobRun, RunState
-from pihome.shared.clock import FrozenClock
-from pihome.shared.ids import new_run_id
+from atlas.jobs.domain.run import JobRun, RunState
+from atlas.shared.clock import FrozenClock
+from atlas.shared.ids import new_run_id
 from tests.factories import ok_report, tier1_definition
 
 

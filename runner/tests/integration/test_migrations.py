@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pihome.persistence.db import Database
+from atlas.persistence.db import Database
 
 
 async def test_migrate_applies_and_is_idempotent(tmp_path: Path) -> None:

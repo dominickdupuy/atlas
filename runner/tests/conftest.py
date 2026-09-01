@@ -9,9 +9,9 @@ from pathlib import Path
 
 import pytest
 
-from pihome.persistence.db import Database
-from pihome.shared.clock import FrozenClock
-from pihome.shared.events import InProcessEventBus
+from atlas.persistence.db import Database
+from atlas.shared.clock import FrozenClock
+from atlas.shared.events import InProcessEventBus
 
 # A Monday noon UTC; cron tests depend on the weekday being known.
 START = datetime(2026, 8, 24, 12, 0, 0, tzinfo=UTC)

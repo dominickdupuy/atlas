@@ -7,17 +7,17 @@ import json
 
 from pydantic import JsonValue
 
-from pihome.connectors.application.gateway import ToolGateway
-from pihome.connectors.application.tier_executors import (
+from atlas.connectors.application.gateway import ToolGateway
+from atlas.connectors.application.tier_executors import (
     Tier1Executor,
     Tier2Executor,
     Tier3AgentExecutor,
     render_text,
     render_value,
 )
-from pihome.connectors.domain.tools import ToolAllowlist
-from pihome.connectors.infrastructure.stubs import StubLlmProvider, StubMcpClient, StubWeather
-from pihome.jobs.domain.definition import JobDefinition
+from atlas.connectors.domain.tools import ToolAllowlist
+from atlas.connectors.infrastructure.stubs import StubLlmProvider, StubMcpClient, StubWeather
+from atlas.jobs.domain.definition import JobDefinition
 from tests.factories import (
     propose_tier1_definition,
     tier1_definition,

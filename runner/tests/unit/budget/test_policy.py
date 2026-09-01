@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from pihome.budget.domain.ledger import UsdMicros, format_usd, usd
-from pihome.budget.domain.policy import BudgetLevel, evaluate
+from atlas.budget.domain.ledger import UsdMicros, format_usd, usd
+from atlas.budget.domain.policy import BudgetLevel, evaluate
 
 
 @pytest.mark.parametrize(

@@ -14,8 +14,8 @@ from datetime import UTC, datetime
 import aiomqtt
 import pytest
 
-from pihome.telemetry.domain.envelope import EventEnvelope
-from pihome.telemetry.infrastructure.mqtt_bus import AiomqttEventBus
+from atlas.telemetry.domain.envelope import EventEnvelope
+from atlas.telemetry.infrastructure.mqtt_bus import AiomqttEventBus
 
 pytestmark = pytest.mark.mqtt
 
@@ -24,23 +24,23 @@ BROKER_PORT = 1883
 
 
 async def test_publish_reaches_a_subscriber() -> None:
-    bus = AiomqttEventBus(BROKER_HOST, BROKER_PORT, client_id="pihome-test-pub")
+    bus = AiomqttEventBus(BROKER_HOST, BROKER_PORT, client_id="atlas-test-pub")
     runner = asyncio.create_task(bus.run())
     try:
         async with aiomqtt.Client(
-            BROKER_HOST, BROKER_PORT, identifier="pihome-test-sub"
+            BROKER_HOST, BROKER_PORT, identifier="atlas-test-sub"
         ) as subscriber:
-            await subscriber.subscribe("pihome/test/#")
+            await subscriber.subscribe("atlas/test/#")
             await bus.publish(
                 EventEnvelope(
-                    topic="pihome/test/hello",
+                    topic="atlas/test/hello",
                     payload={"n": 1},
                     occurred_at=datetime.now(UTC),
                 )
             )
             async with asyncio.timeout(10):
                 async for message in subscriber.messages:
-                    assert message.topic.matches("pihome/test/hello")
+                    assert message.topic.matches("atlas/test/hello")
                     assert isinstance(message.payload, bytes)
                     body = json.loads(message.payload)
                     assert body["n"] == 1

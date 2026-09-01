@@ -3,17 +3,17 @@ guarantee — every path ends in exactly one terminal event."""
 
 from __future__ import annotations
 
-from pihome.jobs.application.execute_job import ExecuteJobService
-from pihome.jobs.application.ports import JobProcessCrash, JobProcessTimeout
-from pihome.jobs.domain.events import (
+from atlas.jobs.application.execute_job import ExecuteJobService
+from atlas.jobs.application.ports import JobProcessCrash, JobProcessTimeout
+from atlas.jobs.domain.events import (
     JobRunAwaitingApproval,
     JobRunCompleted,
     JobRunFailed,
     JobRunStarted,
 )
-from pihome.jobs.domain.run import RunReport, RunState
-from pihome.shared.clock import FrozenClock
-from pihome.shared.events import InProcessEventBus
+from atlas.jobs.domain.run import RunReport, RunState
+from atlas.shared.clock import FrozenClock
+from atlas.shared.events import InProcessEventBus
 from tests.factories import (
     ok_report,
     proposal,
@@ -69,12 +69,12 @@ async def test_completed_event_carries_publish_to_override(
     bus: InProcessEventBus, clock: FrozenClock
 ) -> None:
     recorder = EventRecorder(bus)
-    definition = tier1_definition(output={"publish_to": "pihome/custom/topic"})
+    definition = tier1_definition(output={"publish_to": "atlas/custom/topic"})
     service, _ = _service(FakeLauncher(ok_report()), bus, clock)
     await service.execute(definition, scheduled_for=None)
     completed = recorder.of_type(JobRunCompleted)[0]
     assert isinstance(completed, JobRunCompleted)
-    assert completed.publish_to == "pihome/custom/topic"
+    assert completed.publish_to == "atlas/custom/topic"
 
 
 async def test_propose_job_lands_in_approval_queue(
@@ -179,7 +179,7 @@ async def test_escalation_flag_after_consecutive_failures(
 
 
 async def test_write_mode_executes_actions(bus: InProcessEventBus, clock: FrozenClock) -> None:
-    from pihome.jobs.domain.definition import JobDefinition
+    from atlas.jobs.domain.definition import JobDefinition
     from tests.factories import tier1_spec
 
     definition = JobDefinition.model_validate(
@@ -201,7 +201,7 @@ async def test_write_mode_executes_actions(bus: InProcessEventBus, clock: Frozen
 async def test_write_action_failure_fails_the_run(
     bus: InProcessEventBus, clock: FrozenClock
 ) -> None:
-    from pihome.jobs.domain.definition import JobDefinition
+    from atlas.jobs.domain.definition import JobDefinition
     from tests.factories import tier1_spec
 
     definition = JobDefinition.model_validate(

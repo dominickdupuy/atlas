@@ -43,5 +43,5 @@ on_failure:
   escalate_after: 2
 
 output:
-  publish_to: pihome/jobs/morning-briefing/completed
+  publish_to: atlas/jobs/morning-briefing/completed
   speak: true

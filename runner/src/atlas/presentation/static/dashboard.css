@@ -1,0 +1,123 @@
+/* atlas ops board (D17: plain CSS, custom properties, no build step).
+   D11 constraints: dark, high contrast, type sized for viewing distance,
+   failures legible from across the room. */
+
+:root {
+  --bg: #0d1117;
+  --panel: #161b22;
+  --border: #21262d;
+  --text: #e6edf3;
+  --muted: #8b949e;
+  --ok: #3fb950;
+  --warn: #d29922;
+  --bad: #f85149;
+  --accent: #58a6ff;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 20px;
+  line-height: 1.45;
+  min-height: 100vh;
+}
+
+main { padding: 1.5rem 2rem; }
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.25rem;
+}
+
+h1 { font-size: 1.6rem; font-weight: 600; letter-spacing: 0.02em; }
+h2 {
+  font-size: 1.0rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-bottom: 0.75rem;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.25rem;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+  overflow: hidden; /* D11: content fits or is truncated — never scrolls */
+}
+
+.panel.wide { grid-column: 1 / -1; }
+
+.mode {
+  font-size: 1.2rem;
+  font-weight: 700;
+  padding: 0.35rem 1rem;
+  border-radius: 8px;
+  background: var(--border);
+  letter-spacing: 0.05em;
+}
+.mode-approval_pending { background: var(--warn); color: #000; }
+
+table { width: 100%; border-collapse: collapse; }
+td { padding: 0.35rem 0.6rem 0.35rem 0; vertical-align: baseline; }
+
+.job-id { font-weight: 600; color: var(--accent); white-space: nowrap; }
+.time { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.detail { color: var(--muted); font-size: 0.85em; overflow: hidden; text-overflow: ellipsis; }
+.empty, .hint { color: var(--muted); }
+.hint { font-size: 0.85em; margin-top: 0.5rem; }
+
+.badge {
+  display: inline-block;
+  padding: 0.1rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.badge-completed { background: rgba(63, 185, 80, 0.15); color: var(--ok); }
+.badge-running { background: rgba(88, 166, 255, 0.15); color: var(--accent); }
+.badge-awaiting_approval { background: rgba(210, 153, 34, 0.2); color: var(--warn); }
+.badge-failed, .badge-timed_out { background: rgba(248, 81, 73, 0.2); color: var(--bad); }
+
+.approvals li, .schedule li, .health li {
+  list-style: none;
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.3rem 0;
+  align-items: baseline;
+}
+.approvals .summary { flex: 1; }
+
+.budget .spend { font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.budget .of { font-size: 0.6em; font-weight: 400; color: var(--muted); }
+.meter {
+  height: 10px;
+  background: var(--border);
+  border-radius: 999px;
+  margin-top: 0.6rem;
+  overflow: hidden;
+}
+.meter-fill { height: 100%; background: var(--ok); border-radius: 999px; }
+.budget-warning .meter-fill { background: var(--warn); }
+.budget-exhausted .meter-fill { background: var(--bad); }
+
+.alert {
+  margin-top: 0.6rem;
+  color: var(--bad);
+  font-weight: 700;
+  font-size: 1.1em;
+}

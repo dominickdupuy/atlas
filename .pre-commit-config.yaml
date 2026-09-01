@@ -27,7 +27,7 @@ repos:
         stages: [pre-push]
       - id: validate-jobs
         name: validate job definitions
-        entry: uv --directory runner run pihome validate-jobs --jobs-dir ../jobs
+        entry: uv --directory runner run atlas validate-jobs --jobs-dir ../jobs
         language: system
         files: ^jobs/.*\.ya?ml$
         pass_filenames: false

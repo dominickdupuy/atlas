@@ -43,4 +43,4 @@ Memory check before enabling (D1's budget): local STT + kiosk + HA must fit.
   not offer STT, so this is a separate choice.
 - Display states `LISTENING` / `THINKING` / `SPEAKING`: the runner already
   renders them; wire HA's Assist pipeline events to MQTT so the board reacts
-  (`pihome/display/mode`).
+  (`atlas/display/mode`).

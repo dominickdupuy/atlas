@@ -35,10 +35,10 @@ async def test_query_token_sets_cookie_and_redirects(client: AsyncClient) -> Non
     response = await client.get(f"/?token={API_TOKEN}")
     assert response.status_code == 303
     assert response.headers["location"] == "/"
-    assert "pihome_token" in response.headers.get("set-cookie", "")
+    assert "atlas_token" in response.headers.get("set-cookie", "")
 
     # The cookie now authenticates by itself (the kiosk's steady state).
-    client.cookies.set("pihome_token", API_TOKEN)
+    client.cookies.set("atlas_token", API_TOKEN)
     followup = await client.get("/")
     assert followup.status_code == 200
 

@@ -5,9 +5,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from pihome.connectors.domain.tools import TokenUsage, ToolCall
-from pihome.jobs.domain.definition import JobDefinition
-from pihome.jobs.domain.run import ProposedAction, RunReport
+from atlas.connectors.domain.tools import TokenUsage, ToolCall
+from atlas.jobs.domain.definition import JobDefinition
+from atlas.jobs.domain.run import ProposedAction, RunReport
 
 
 def tier1_spec(**overrides: Any) -> dict[str, Any]:

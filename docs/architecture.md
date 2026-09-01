@@ -1,4 +1,4 @@
-# pi-home: Architecture Specification
+# atlas: Architecture Specification
 
 **Status:** Draft v1.4
 **Author:** Dominick Dupuy
@@ -16,7 +16,7 @@ _Changes in v1.1: added D14 (implementation language) and D15 (network transport
 
 ## 1. Purpose
 
-`pi-home` is an always-on personal automation host running on a single Raspberry Pi 5. It exists to do two things well:
+`atlas` is an always-on personal automation host running on a single Raspberry Pi 5. It exists to do two things well:
 
 1. **Run agentic cron jobs.** Scheduled, unattended tasks that gather information across services, reason about it when reasoning is warranted, and surface the result somewhere I will actually see it.
 2. **Provide voice control across connectors.** A single spoken interface that spans smart home devices, Google Calendar, and whatever else gets added, without needing a separate app or vocabulary per service.
@@ -136,13 +136,13 @@ Each decision below states what was chosen, why, and what was rejected.
 **Topic namespace:**
 
 ```
-pihome/jobs/<job_id>/started
-pihome/jobs/<job_id>/completed
-pihome/jobs/<job_id>/failed
-pihome/jobs/<job_id>/awaiting_approval
-pihome/display/mode
-pihome/budget/status
-pihome/system/health
+atlas/jobs/<job_id>/started
+atlas/jobs/<job_id>/completed
+atlas/jobs/<job_id>/failed
+atlas/jobs/<job_id>/awaiting_approval
+atlas/display/mode
+atlas/budget/status
+atlas/system/health
 ```
 
 ### D7. Three-tier job model
@@ -283,7 +283,7 @@ GET  /                               # dashboard
 
 ```
 commands in   -> HTTP (validated, acknowledged, persisted)
-state out     -> MQTT (pihome/jobs/<id>/approved, etc.)
+state out     -> MQTT (atlas/jobs/<id>/approved, etc.)
 ```
 
 This is what makes D6 a coherent rule rather than an arbitrary one.
@@ -423,7 +423,7 @@ on_failure:
   escalate_after: 2 # consecutive failures before loud alert
 
 output:
-  publish_to: pihome/jobs/morning-briefing/completed
+  publish_to: atlas/jobs/morning-briefing/completed
   speak: true
 ```
 
@@ -449,14 +449,14 @@ output:
 ## 9. Repository layout
 
 ```
-pi-home/
+atlas/
 ├── compose.yaml                  # full stack; profiles: ha, mcp, voice
 ├── .env.example                  # secrets template, real .env gitignored
 │
 ├── runner/                       # the modular monolith (Docker build context)
 │   ├── Dockerfile                # multi-arch: arm64 for the Pi, amd64 for dev
 │   ├── pyproject.toml            # uv-managed; ruff, strict mypy, pytest config
-│   ├── src/pihome/
+│   ├── src/atlas/
 │   │   ├── __main__.py           # CLI: serve | execute-job | validate-jobs | migrate
 │   │   ├── config.py             # pydantic-settings, env-driven
 │   │   ├── shared/               # shared kernel: domain events, clock, IDs — kept tiny
@@ -486,6 +486,7 @@ pi-home/
 │
 └── docs/
     ├── architecture.md           # this document
+    ├── development.md            # continuing development: state, deferrals, pick-up guide
     ├── voice.md                  # phase 6 setup notes
     └── operations.md             # runbook
 ```

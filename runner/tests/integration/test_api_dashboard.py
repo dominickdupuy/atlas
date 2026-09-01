@@ -7,10 +7,10 @@ from datetime import UTC, datetime
 
 from httpx import AsyncClient
 
-from pihome.bootstrap.container import Application
-from pihome.jobs.domain.events import JobRunStarted
-from pihome.presentation.http.panels import PANEL_NAMES
-from pihome.shared.ids import JobId, RunId
+from atlas.bootstrap.container import Application
+from atlas.jobs.domain.events import JobRunStarted
+from atlas.presentation.http.panels import PANEL_NAMES
+from atlas.shared.ids import JobId, RunId
 from tests.integration.conftest import AUTH
 
 
@@ -46,7 +46,7 @@ async def test_sse_emits_a_rendered_fragment_on_domain_event(
     from collections.abc import MutableMapping
     from typing import Any
 
-    from pihome.presentation.http.app import create_app
+    from atlas.presentation.http.app import create_app
 
     api = create_app(application)
     chunks: asyncio.Queue[bytes] = asyncio.Queue()

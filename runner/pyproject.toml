@@ -1,7 +1,7 @@
 [project]
-name = "pihome"
+name = "atlas"
 version = "0.1.0"
-description = "pi-home job runner: scheduled agentic jobs with approvals, budgets, and a passive ops board"
+description = "atlas job runner: scheduled agentic jobs with approvals, budgets, and a passive ops board"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -24,7 +24,7 @@ dependencies = [
 ]
 
 [project.scripts]
-pihome = "pihome.__main__:main"
+atlas = "atlas.__main__:main"
 
 [dependency-groups]
 dev = [

@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from pihome.jobs.domain.definition import JobDefinition, Tier
+from atlas.jobs.domain.definition import JobDefinition, Tier
 from tests.factories import tier1_spec, tier2_spec, tier3_spec
 
 

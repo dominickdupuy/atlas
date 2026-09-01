@@ -1,4 +1,4 @@
-# pi-home stack.
+# atlas stack.
 #
 # Image pinning (D19): exact version tags only, never `latest` or floating
 # majors. Upgrade procedure: bump the tag, `docker compose pull`, run the
@@ -6,12 +6,12 @@
 #
 # Profiles:
 #   (none)   mosquitto + ntfy + runner. Works on any dev machine with zero
-#            credentials via PIHOME_PROFILE=dev (stub connectors).
+#            credentials via ATLAS_PROFILE=dev (stub connectors).
 #   ha       Home Assistant. Required on the Pi, optional in dev.
 #   mcp      MCP connector servers (real, scoped credentials required — D19).
 #   voice    Wyoming STT/TTS services, phase 6. See docs/voice.md.
 
-name: pihome
+name: atlas
 
 services:
   mosquitto:
@@ -32,7 +32,7 @@ services:
     environment:
       # The URL your PHONE uses to reach ntfy. On the Pi: the Tailscale
       # address (D12). Dev default is fine for browser testing.
-      NTFY_BASE_URL: ${PIHOME_NTFY_BASE_URL:-http://127.0.0.1:8090}
+      NTFY_BASE_URL: ${ATLAS_NTFY_BASE_URL:-http://127.0.0.1:8090}
     volumes:
       - ./infra/ntfy/server.yml:/etc/ntfy/server.yml:ro
       - ntfy-auth:/var/lib/ntfy
@@ -51,20 +51,20 @@ services:
     env_file: .env
     environment:
       # Container-internal paths and wiring; user config stays in .env.
-      PIHOME_DB_PATH: /data/state.db
-      PIHOME_JOBS_DIR: /jobs
-      PIHOME_MQTT_HOST: mosquitto
-      PIHOME_NTFY_URL: http://ntfy
+      ATLAS_DB_PATH: /data/state.db
+      ATLAS_JOBS_DIR: /jobs
+      ATLAS_MQTT_HOST: mosquitto
+      ATLAS_NTFY_URL: http://ntfy
       # Inside the container bind wide; exposure is controlled by the port
       # mapping below (D16).
-      PIHOME_BIND_HOST: 0.0.0.0
+      ATLAS_BIND_HOST: 0.0.0.0
     volumes:
       - ./jobs:/jobs:ro
-      - pihome-data:/data
+      - atlas-data:/data
     ports:
       # Dev: loopback only. On the Pi, publish on the Tailscale interface
       # (D16): "100.x.y.z:8100:8100". Never 0.0.0.0.
-      - "127.0.0.1:${PIHOME_BIND_PORT:-8100}:8100"
+      - "127.0.0.1:${ATLAS_BIND_PORT:-8100}:8100"
 
   homeassistant:
     image: ghcr.io/home-assistant/home-assistant:2026.8.3
@@ -124,4 +124,4 @@ volumes:
   mosquitto-data:
   ntfy-auth:
   ntfy-cache:
-  pihome-data:
+  atlas-data:

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from pihome.budget.domain.ledger import usd
-from pihome.budget.infrastructure.pricing import StaticPricingTable
+from atlas.budget.domain.ledger import usd
+from atlas.budget.infrastructure.pricing import StaticPricingTable
 from tests.factories import usage
 
 

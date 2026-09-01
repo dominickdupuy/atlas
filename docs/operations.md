@@ -1,6 +1,6 @@
 # Operations runbook
 
-Procedures for running and debugging pi-home. Architecture and rationale live
+Procedures for running and debugging atlas. Architecture and rationale live
 in [architecture.md](architecture.md); this file is the "how do I" companion.
 
 ## Tokens and secrets
@@ -10,10 +10,10 @@ rules are D19: provider-side read-only scopes first, allowlists second.
 
 | Secret | Scope | Rotation |
 |---|---|---|
-| `PIHOME_API_TOKEN` | The D16 HTTP API + dashboard | Regenerate, update `.env` and `/etc/pihome/kiosk.env`, restart runner + kiosk |
+| `ATLAS_API_TOKEN` | The D16 HTTP API + dashboard | Regenerate, update `.env` and `/etc/atlas/kiosk.env`, restart runner + kiosk |
 | `ANTHROPIC_API_KEY` | Reasoning tier | Rotate in the Anthropic console, update `.env` |
 | `GITHUB_TOKEN` | Fine-grained PAT, read-only, named repos only | GitHub settings → fine-grained tokens |
-| `PIHOME_NTFY_TOKEN` | Runner's ntfy publish access | See ntfy setup below |
+| `ATLAS_NTFY_TOKEN` | Runner's ntfy publish access | See ntfy setup below |
 | Google OAuth | Calendar read-only scope | Google Cloud console |
 
 ## ntfy setup (one-time)
@@ -23,23 +23,23 @@ ntfy is deny-by-default (`infra/ntfy/server.yml`). Create the two principals:
 ```sh
 # The runner (publishes approval prompts):
 docker compose exec ntfy ntfy user add --role=user runner
-docker compose exec ntfy ntfy access runner pihome-approvals write-only
-docker compose exec ntfy ntfy token add runner   # -> PIHOME_NTFY_TOKEN in .env
+docker compose exec ntfy ntfy access runner atlas-approvals write-only
+docker compose exec ntfy ntfy token add runner   # -> ATLAS_NTFY_TOKEN in .env
 
 # You (subscribes on the phone):
 docker compose exec ntfy ntfy user add --role=user dominick
-docker compose exec ntfy ntfy access dominick pihome-approvals read-only
+docker compose exec ntfy ntfy access dominick atlas-approvals read-only
 ```
 
-Then subscribe to `pihome-approvals` in the ntfy app, pointed at the server's
+Then subscribe to `atlas-approvals` in the ntfy app, pointed at the server's
 Tailscale address.
 
 ## Inspecting state
 
-The runner's state is one SQLite file on the `pihome-data` volume.
+The runner's state is one SQLite file on the `atlas-data` volume.
 
 ```sh
-docker compose exec runner python -m pihome migrate --status   # applied migrations
+docker compose exec runner python -m atlas migrate --status   # applied migrations
 docker compose cp runner:/data/state.db ./state-inspect.db     # copy out, then:
 sqlite3 state-inspect.db 'SELECT job_id, state, started_at FROM job_runs ORDER BY started_at DESC LIMIT 20;'
 sqlite3 state-inspect.db 'SELECT approval_id, job_id, state, expires_at FROM approvals;'
@@ -49,7 +49,7 @@ sqlite3 state-inspect.db "SELECT DATE(recorded_at), SUM(cost_usd_micros)/1e6 FRO
 ## Watching events
 
 ```sh
-docker compose exec mosquitto mosquitto_sub -t 'pihome/#' -v
+docker compose exec mosquitto mosquitto_sub -t 'atlas/#' -v
 ```
 
 Topic namespace is in the spec (D6). Every job must end in a terminal event;
@@ -63,7 +63,7 @@ the scheduler would run it:
 
 ```sh
 cd runner
-uv run pihome execute-job < request.json    # request.json: see tests/integration fixtures
+uv run atlas execute-job < request.json    # request.json: see tests/integration fixtures
 ```
 
 The child writes NDJSON to stdout (final line is the RunReport) and logs to
@@ -74,7 +74,7 @@ stderr. The parent's logs prefix every relayed child line with
 
 ```sh
 docker compose logs -f runner
-journalctl -u pihome-kiosk -f        # on the Pi
+journalctl -u atlas-kiosk -f        # on the Pi
 ```
 
 ## Vetting a community MCP server (D19)
@@ -90,5 +90,5 @@ Before any community server gets a credential:
 ## Backups (on the Pi)
 
 `restic` over the data volumes; exclude or encrypt secrets (section 8).
-Config is reproducible from git — only `pihome-data` (SQLite) and
+Config is reproducible from git — only `atlas-data` (SQLite) and
 `homeassistant/` runtime state are worth backing up.

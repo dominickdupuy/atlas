@@ -1,5 +1,5 @@
 """The job definitions this repo actually ships must validate — the same
-check `pihome validate-jobs` and CI run."""
+check `atlas validate-jobs` and CI run."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from pihome.jobs.application.catalog import JobCatalog
-from pihome.jobs.infrastructure.yaml_source import JobFileError, YamlJobDefinitionSource
+from atlas.jobs.application.catalog import JobCatalog
+from atlas.jobs.infrastructure.yaml_source import JobFileError, YamlJobDefinitionSource
 
 REPO_JOBS = Path(__file__).parents[2].parent / "jobs"
 BAD_JOBS = Path(__file__).parent.parent / "fixtures" / "bad-jobs"

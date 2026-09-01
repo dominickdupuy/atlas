@@ -7,11 +7,11 @@ from datetime import UTC, datetime, timedelta
 
 from httpx import AsyncClient
 
-from pihome.approvals.domain.approval import Approval
-from pihome.approvals.domain.events import ApprovalDecided
-from pihome.bootstrap.container import Application
-from pihome.jobs.domain.run import JobRun
-from pihome.shared.ids import ApprovalId, new_approval_id, new_run_id
+from atlas.approvals.domain.approval import Approval
+from atlas.approvals.domain.events import ApprovalDecided
+from atlas.bootstrap.container import Application
+from atlas.jobs.domain.run import JobRun
+from atlas.shared.ids import ApprovalId, new_approval_id, new_run_id
 from tests.factories import proposal, tier1_definition
 from tests.fakes import EventRecorder
 from tests.integration.conftest import AUTH

@@ -6,7 +6,7 @@ from datetime import timedelta
 
 import pytest
 
-from pihome.approvals.domain.approval import (
+from atlas.approvals.domain.approval import (
     Applied,
     Approval,
     ApprovalState,
@@ -14,8 +14,8 @@ from pihome.approvals.domain.approval import (
     JustExpired,
     Replay,
 )
-from pihome.shared.clock import FrozenClock
-from pihome.shared.ids import JobId, RunId, new_approval_id
+from atlas.shared.clock import FrozenClock
+from atlas.shared.ids import JobId, RunId, new_approval_id
 from tests.factories import proposal
 
 

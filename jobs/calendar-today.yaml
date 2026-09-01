@@ -25,5 +25,5 @@ on_failure:
   escalate_after: 3
 
 output:
-  publish_to: pihome/jobs/calendar-today/completed
+  publish_to: atlas/jobs/calendar-today/completed
   speak: false

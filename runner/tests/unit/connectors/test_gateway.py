@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from pihome.connectors.application.gateway import (
+from atlas.connectors.application.gateway import (
     ToolCallBudgetExceeded,
     ToolGateway,
     ToolNotPermitted,
     UnknownToolServer,
 )
-from pihome.connectors.domain.tools import ToolAllowlist, ToolCall
-from pihome.connectors.infrastructure.stubs import StubMcpClient, StubWeather
+from atlas.connectors.domain.tools import ToolAllowlist, ToolCall
+from atlas.connectors.infrastructure.stubs import StubMcpClient, StubWeather
 
 
 def _gateway(tools: set[str], max_calls: int = 10) -> ToolGateway:

@@ -1,20 +1,20 @@
 """Test-only fakes (dev-profile stubs live in
-pihome.connectors.infrastructure.stubs and are reused directly)."""
+atlas.connectors.infrastructure.stubs and are reused directly)."""
 
 from __future__ import annotations
 
-from pihome.connectors.application.ports import Notification
-from pihome.connectors.domain.tools import TokenUsage, ToolResult
-from pihome.jobs.application.ports import (
+from atlas.connectors.application.ports import Notification
+from atlas.connectors.domain.tools import TokenUsage, ToolResult
+from atlas.jobs.application.ports import (
     BudgetDecision,
     JobProcessCrash,
     JobProcessTimeout,
     JobRunRepository,
 )
-from pihome.jobs.domain.definition import JobDefinition
-from pihome.jobs.domain.run import JobRun, ProposedAction, RunReport, RunRequest, RunState
-from pihome.shared.events import DomainEvent, InProcessEventBus
-from pihome.shared.ids import ApprovalId, JobId, RunId
+from atlas.jobs.domain.definition import JobDefinition
+from atlas.jobs.domain.run import JobRun, ProposedAction, RunReport, RunRequest, RunState
+from atlas.shared.events import DomainEvent, InProcessEventBus
+from atlas.shared.ids import ApprovalId, JobId, RunId
 
 
 class EventRecorder:

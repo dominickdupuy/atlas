@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pihome.jobs.application.catalog import JobCatalog
-from pihome.jobs.application.scheduler import CronScheduler
-from pihome.jobs.domain.definition import JobDefinition
-from pihome.shared.clock import FrozenClock
+from atlas.jobs.application.catalog import JobCatalog
+from atlas.jobs.application.scheduler import CronScheduler
+from atlas.jobs.domain.definition import JobDefinition
+from atlas.shared.clock import FrozenClock
 from tests.factories import tier1_definition
 
 

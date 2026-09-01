@@ -11,9 +11,9 @@ from pathlib import Path
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from pihome.bootstrap.container import Application, build_application
-from pihome.config import Settings
-from pihome.presentation.http.app import create_app
+from atlas.bootstrap.container import Application, build_application
+from atlas.config import Settings
+from atlas.presentation.http.app import create_app
 
 FIXTURE_JOBS = Path(__file__).parent.parent / "fixtures" / "jobs"
 
