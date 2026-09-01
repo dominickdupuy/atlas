@@ -28,6 +28,7 @@ from atlas.approvals.domain.approval import Approval
 from atlas.bootstrap.container import Application
 from atlas.budget.domain.ledger import UsdMicros, format_usd
 from atlas.budget.domain.policy import BudgetLevel
+from atlas.connectors.application.ports import CalendarEvent
 from atlas.jobs.domain.definition import ExecutionMode, JobDefinition
 from atlas.jobs.domain.run import JobRun, RunState
 from atlas.telemetry.infrastructure.service_probes import ServiceStatus, probe_all
@@ -163,11 +164,17 @@ class TimelineEntry(_Frozen):
 
 
 class CalendarInfo(_Frozen):
-    """The design's calendar panel needs an MCP server that phase 5 has not
-    stood up. Reporting that plainly beats drawing plausible meetings."""
+    """Where the calendar came from and how fresh it is.
+
+    A published feed is a third party that can lag or fail, so the board is
+    told when it was last fetched rather than being left to imply the events
+    are current."""
 
     configured: bool
     detail: str
+    synced_at: datetime | None = None
+    error: str | None = None
+    event_count: int = 0
 
 
 class WeatherInfo(_Frozen):
@@ -469,14 +476,49 @@ def _scheduled_entries(
     return entries
 
 
+def _calendar_entries(
+    events: tuple[CalendarEvent, ...], tz: ZoneInfo, today: datetime
+) -> list[TimelineEntry]:
+    entries: list[TimelineEntry] = []
+    for event in events:
+        start = event.start.astimezone(tz)
+        day_offset = (start.date() - today.date()).days
+        if not 0 <= day_offset < TIMELINE_DAYS:
+            continue
+        finish = event.end.astimezone(tz) if event.end else None
+        # An event running past midnight is clamped to its own day rather than
+        # bleeding into tomorrow's column, which would misreport both.
+        end_minutes = None
+        if finish is not None:
+            end_minutes = _minutes(finish) if finish.date() == start.date() else 24 * 60 - 1
+        detail = event.location or ""
+        if event.all_day:
+            detail = "all day" + (f" · {detail}" if detail else "")
+        entries.append(
+            TimelineEntry(
+                kind="calendar_event",
+                label=event.summary,
+                detail=detail or None,
+                day_offset=day_offset,
+                start_minutes=_minutes(start),
+                end_minutes=end_minutes,
+                category="calendar",
+                status="busy" if event.busy else "free",
+            )
+        )
+    return entries
+
+
 def build_timeline(
     now_local: datetime,
     runs: list[JobRun],
     fires: list[tuple[JobDefinition, datetime]],
     tz: ZoneInfo,
+    calendar_events: tuple[CalendarEvent, ...] = (),
 ) -> tuple[list[TimelineDay], list[TimelineEntry]]:
     entries = _run_entries(runs, tz, now_local)
     entries.extend(_scheduled_entries(fires, tz, now_local))
+    entries.extend(_calendar_entries(calendar_events, tz, now_local))
     entries.sort(key=lambda item: (item.day_offset, item.start_minutes))
     entries = entries[:MAX_TIMELINE_ENTRIES]
 
@@ -510,14 +552,33 @@ class StatusAssembler:
         self._tz = ZoneInfo(application.settings.tz)
         self._weather_cache: tuple[datetime, WeatherInfo] | None = None
 
-    def _calendar(self) -> CalendarInfo:
-        url = self._app.settings.mcp_gcal_url
-        if not url:
-            return CalendarInfo(
-                configured=False,
-                detail="google-calendar MCP server not configured (spec §10, phase 5)",
+    async def _calendar(
+        self, window_start: datetime, window_end: datetime
+    ) -> tuple[CalendarInfo, tuple[CalendarEvent, ...]]:
+        if self._app.calendar is None:
+            return (
+                CalendarInfo(
+                    configured=False,
+                    detail="no calendar feed configured (set ATLAS_CALENDAR_ICS_URL)",
+                ),
+                (),
             )
-        return CalendarInfo(configured=True, detail=url)
+        feed = await self._app.calendar.get_events(window_start, window_end)
+        detail = "published .ics feed"
+        if feed.error and not feed.events:
+            detail = f"unavailable: {feed.error}"
+        elif feed.error:
+            detail = "published .ics feed · last refresh failed"
+        return (
+            CalendarInfo(
+                configured=True,
+                detail=detail,
+                synced_at=feed.fetched_at,
+                error=feed.error,
+                event_count=len(feed.events),
+            ),
+            feed.events,
+        )
 
     async def _weather(self, now: datetime) -> WeatherInfo:
         settings = self._app.settings
@@ -557,8 +618,13 @@ class StatusAssembler:
         metrics = app.metrics.read()
 
         now_local = now.astimezone(self._tz)
+        window_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+        window_end = window_start + timedelta(days=TIMELINE_DAYS)
+        calendar, calendar_events = await self._calendar(window_start, window_end)
         fires = app.scheduler.occurrences_between(now, now + timedelta(days=TIMELINE_DAYS))
-        timeline_days, timeline = build_timeline(now_local, recent, fires, self._tz)
+        timeline_days, timeline = build_timeline(
+            now_local, recent, fires, self._tz, calendar_events
+        )
         weather = await self._weather(now)
 
         alerts = build_alerts(
@@ -600,6 +666,6 @@ class StatusAssembler:
             timeline_end_hour=TIMELINE_END_HOUR,
             timeline_days=timeline_days,
             timeline=timeline,
-            calendar=self._calendar(),
+            calendar=calendar,
             weather=weather,
         )

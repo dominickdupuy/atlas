@@ -286,6 +286,63 @@ carries `?token=` and is visible in `ps` (single-user host, but real); a mouse
 cursor is visible on the panel despite `cursor: none` (compositor-drawn — worth
 `unclutter`-equivalent attention given 24/7 burn-in).
 
+## 2026-09-01 16:15 — Real Outlook calendar on the board
+
+**Correction to an earlier entry:** the monitor is no longer the 1024x768 4:3
+panel recorded below. It is now `HDMI-A-1 "XYM M156F1"` at a true 1920x1080, so
+the board renders at the design's native artboard size. The adaptive canvas
+sizing still applies and is a no-op at 16:9. Also rotated 180 (kanshi profile in
+`~/.config/kanshi/config`, verified by restarting kanshi and watching it
+re-apply).
+
+**Calendar.** The UF tenant will not grant an API client, so the calendar is
+shared out as a published `.ics` feed. That is architecturally the *better*
+path anyway: D19 says a capability that is one unauthenticated endpoint is a
+plain HTTP call inside the runner, not an MCP server — weather is the stated
+example and a published feed is the same shape.
+
+`connectors/infrastructure/ics_calendar.py` fetches, parses and expands it.
+Three things it exists to get right:
+
+1. **Windows timezone names.** Exchange emits `TZID:Eastern Standard Time`,
+   which is not IANA and is not a fixed -05:00. The feed carries VTIMEZONE
+   blocks with the real DST rules; icalendar builds the zone from those.
+   Verified on the live feed: a September event resolves to -04:00 (EDT), and
+   `test_windows_timezone_resolves_to_daylight_time` pins it. Getting this
+   wrong shifts every class by an hour.
+2. **Recurrence.** A timetable is mostly RRULE with individual moved lectures
+   as RECURRENCE-ID overrides. Expansion is delegated to
+   `recurring-ical-events` rather than hand-rolled.
+3. **Staleness.** A published feed is a third party. The fetch is cached
+   (15 min TTL — Exchange regenerates on the order of hours, so polling it per
+   10s board refresh is pure waste), a failed refresh keeps the last good
+   timetable rather than blanking it, and the board prints `synced HH:MM` so
+   it never implies the events are live when they are not.
+
+**New dependencies, justified:** `icalendar` and `recurring-ical-events`.
+Correct RRULE expansion, RECURRENCE-ID overrides and VTIMEZONE-derived DST are
+genuinely hard, and a wrong-by-an-hour class on a wall calendar is worse than
+no calendar. `recurring_ical_events` ships no `py.typed`, so it has a narrow
+mypy override; the untyped surface stops at that one adapter behind
+`CalendarPort`.
+
+### SECURITY — the feed URL is a credential
+
+Anyone holding that URL can read the calendar without authenticating. It is a
+capability URL, equivalent to a password. It lives in
+`/opt/atlas/runner/.env` (mode 600, gitignored, untracked — verified with
+`git check-ignore`). It is **not** in `config.toml`, not in any commit, and not
+in this file.
+
+Two things to do when convenient:
+
+- Move it to `/etc/atlas/atlas.env`, which is outside the repo entirely and
+  cannot be lost to `git clean -xfd`:
+  `sudo sh -c 'grep ATLAS_CALENDAR_ICS_URL /opt/atlas/runner/.env >> /etc/atlas/atlas.env'`
+  then delete the line from `runner/.env` and `sudo systemctl restart atlas`.
+- The URL was pasted into a chat transcript. If that matters, re-share the
+  calendar in Outlook to rotate it and drop the new URL in the same place.
+
 ## Running log
 
 ### 23:51 — Orientation

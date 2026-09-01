@@ -21,6 +21,8 @@ dependencies = [
     "anthropic>=0.40",
     "mcp>=1.2",
     "sse-starlette>=2.1",
+    "icalendar>=7.3.0",
+    "recurring-ical-events>=3.8.2",
 ]
 
 [project.scripts]
@@ -58,6 +60,13 @@ strict = true
 warn_unreachable = true
 plugins = ["pydantic.mypy"]
 mypy_path = "src"
+
+# recurring_ical_events ships no py.typed marker. It is used in exactly one
+# adapter, behind the CalendarPort protocol, so the untyped surface stops at
+# that module's boundary.
+[[tool.mypy.overrides]]
+module = ["recurring_ical_events.*"]
+ignore_missing_imports = true
 
 [tool.pydantic-mypy]
 init_forbid_extra = true

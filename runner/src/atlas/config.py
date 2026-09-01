@@ -68,6 +68,12 @@ class Settings(BaseSettings):
     homeassistant_host: str = "127.0.0.1"
     homeassistant_port: int = 8123
 
+    # Published .ics feed for the board's calendar (D19: one unauthenticated
+    # endpoint is a plain HTTP call, not an MCP server). SECRET: anyone with
+    # this URL can read the calendar without authenticating, so it belongs in
+    # the environment or /etc/atlas/atlas.env, never in config.toml or the repo.
+    calendar_ics_url: str = ""
+
     daily_ceiling_usd: str = "5.00"
     model: str = "claude-sonnet-5"
     price_input_per_mtok: str | None = None

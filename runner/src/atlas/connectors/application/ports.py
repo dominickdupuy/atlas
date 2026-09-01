@@ -3,6 +3,7 @@ nothing outside the connectors context imports an adapter directly."""
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -56,6 +57,37 @@ class Forecast(BaseModel):
 
 class WeatherPort(Protocol):
     async def get_forecast(self, latitude: float, longitude: float) -> Forecast: ...
+
+
+class CalendarEvent(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    uid: str
+    summary: str
+    start: datetime
+    end: datetime | None = None
+    location: str | None = None
+    all_day: bool = False
+    busy: bool = True
+
+
+class CalendarFeed(BaseModel):
+    """Events plus the health of the fetch that produced them.
+
+    A published calendar feed is a third party that can be slow or down, and
+    the board must be able to say "these events are from 40 minutes ago"
+    rather than quietly showing yesterday's timetable as though it were live.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    events: tuple[CalendarEvent, ...] = ()
+    fetched_at: datetime | None = None
+    error: str | None = None
+
+
+class CalendarPort(Protocol):
+    async def get_events(self, start: datetime, end: datetime) -> CalendarFeed: ...
 
 
 class NotificationAction(BaseModel):

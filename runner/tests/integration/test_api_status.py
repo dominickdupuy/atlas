@@ -334,12 +334,16 @@ async def test_a_handful_of_runs_stay_individual(
 
 
 async def test_calendar_reports_that_it_is_not_configured(client: AsyncClient) -> None:
-    """The design's calendar panel needs a phase-5 MCP server. Saying so beats
-    drawing plausible meetings."""
+    """With no feed URL set, the board says so rather than drawing plausible
+    meetings."""
     body = (await client.get("/api/status", headers=AUTH)).json()
 
-    assert body["calendar"]["configured"] is False
-    assert "not configured" in body["calendar"]["detail"]
+    calendar = body["calendar"]
+    assert calendar["configured"] is False
+    assert "ATLAS_CALENDAR_ICS_URL" in calendar["detail"]
+    assert calendar["event_count"] == 0
+    assert calendar["synced_at"] is None
+    assert not [e for e in body["timeline"] if e["kind"] == "calendar_event"]
 
 
 async def test_weather_never_reports_stub_numbers_as_real(client: AsyncClient) -> None:

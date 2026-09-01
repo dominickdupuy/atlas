@@ -591,11 +591,11 @@ body[data-stale="true"] .head-right .pill {
 .ev.tall {
   flex-direction: column;
   align-items: flex-start;
+  padding: 5px 11px;
   /* Anchored to the top: the label marks when the block STARTS. Centring it
      in a tall band made an 06:00 band look like it began at 6 PM. */
   justify-content: flex-start;
-  gap: 3px;
-  padding: 7px 12px;
+  gap: 1px;
   border-radius: 8px;
 }
 
@@ -660,6 +660,24 @@ body[data-stale="true"] .head-right .pill {
   border-top-color: rgba(10, 132, 255, 0.34);
   border-right-color: rgba(10, 132, 255, 0.34);
   border-bottom-color: rgba(10, 132, 255, 0.34);
+}
+
+/* Calendar events take the design's primary blue; atlas jobs stay cyan so
+   "what the machine did" and "what I have to be at" never blur together. */
+.ev[data-kind="calendar_event"] {
+  border-left-color: var(--blue);
+  background: rgba(10, 132, 255, 0.16);
+  border-top-color: rgba(10, 132, 255, 0.34);
+  border-right-color: rgba(10, 132, 255, 0.34);
+  border-bottom-color: rgba(10, 132, 255, 0.34);
+}
+
+.ev[data-kind="calendar_event"][data-status="free"] {
+  border-left-color: var(--purple);
+  background: rgba(191, 90, 242, 0.13);
+  border-top-color: rgba(191, 90, 242, 0.3);
+  border-right-color: rgba(191, 90, 242, 0.3);
+  border-bottom-color: rgba(191, 90, 242, 0.3);
 }
 
 .ev[data-kind="job_scheduled"] {

@@ -32,7 +32,10 @@
   var BOARD_MIN_W = 1280;
   var BOARD_MAX_W = 2560;
   var MIN_EVENT_PCT = 2.4;
-  var TALL_EVENT_PCT = 5.0;
+  // A 50-minute class is 5.2% of a 06:00-22:00 band, which is not enough
+  // height for a two-line block: the room number clipped. Above ~1h10 it
+  // fits; below it, label and detail share one line and ellipsis.
+  var TALL_EVENT_PCT = 7.0;
 
   var lastSuccessAt = null;
   var lastSnapshot = null;
@@ -225,11 +228,18 @@
 
     var cal = s.calendar || {};
     text($("timeline-title"), cal.configured ? "CALENDAR" : "SCHEDULE");
+    var source = cal.detail || "atlas jobs only";
+    if (cal.configured && cal.synced_at) {
+      // Say when, not just what: a published feed can lag by hours, and the
+      // board should never imply it is live when it is not.
+      source = cal.event_count + " events · synced " + hhmm(cal.synced_at);
+      if (cal.error) source += " · refresh failing";
+    }
+    text($("timeline-source"), source);
     text(
-      $("timeline-source"),
-      cal.configured ? "google-calendar.list_events" : cal.detail || "atlas jobs only"
+      $("legend-note"),
+      cal.configured ? "read-only feed · atlas cannot write to it" : "calendar not connected"
     );
-    text($("legend-note"), cal.configured ? "read-only scope" : "calendar not connected");
 
     // hour gutter
     var gutter = $("gutter");

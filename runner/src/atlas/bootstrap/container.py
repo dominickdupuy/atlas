@@ -23,7 +23,8 @@ from atlas.budget.domain.ledger import usd
 from atlas.budget.infrastructure.pricing import StaticPricingTable
 from atlas.budget.infrastructure.sqlite_repo import SqliteBudgetLedgerRepository
 from atlas.config import Settings
-from atlas.connectors.application.ports import WeatherPort
+from atlas.connectors.application.ports import CalendarPort, WeatherPort
+from atlas.connectors.infrastructure.ics_calendar import IcsCalendarClient
 from atlas.jobs.application.catalog import JobCatalog
 from atlas.jobs.application.execute_job import ExecuteJobService
 from atlas.jobs.application.scheduler import CronScheduler
@@ -64,6 +65,7 @@ class Application:
     display_mode: DisplayModeTracker
     clock: Clock
     weather: WeatherPort
+    calendar: CalendarPort | None
     metrics: SystemMetricsReader
     probes: tuple[TcpServiceProbe, ...]
     started_at: datetime
@@ -158,6 +160,14 @@ def build_application(settings: Settings) -> Application:
     scheduler = CronScheduler(catalog=catalog, clock=clock, on_due=on_due, timezone=settings.tz)
     scheduler_holder.append(scheduler)
 
+    # Gated on the URL, not on the profile: the feed needs no credentials,
+    # so it works in dev exactly as it does in prod.
+    calendar = (
+        IcsCalendarClient(settings.calendar_ics_url, clock=clock)
+        if settings.calendar_ics_url
+        else None
+    )
+
     probes = (
         TcpServiceProbe("homeassistant", settings.homeassistant_host, settings.homeassistant_port),
         TcpServiceProbe("mosquitto", settings.mqtt_host, settings.mqtt_port),
@@ -187,6 +197,7 @@ def build_application(settings: Settings) -> Application:
         display_mode=display_mode,
         clock=clock,
         weather=connectors.weather,
+        calendar=calendar,
         metrics=SystemMetricsReader(),
         probes=probes,
         started_at=clock.now(),
