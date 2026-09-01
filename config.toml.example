@@ -1,0 +1,35 @@
+# atlas host-local settings.
+#
+# Copy to config.toml (gitignored) on the Pi. The deployed tree is
+# /opt/atlas, so this file lives at /opt/atlas/config.toml, which is where
+# the runner looks by default. Override with ATLAS_CONFIG_FILE.
+#
+# Keys are Settings field names WITHOUT the ATLAS_ prefix. Environment
+# variables beat this file, so a systemd drop-in still wins.
+#
+# This is for the values a human edits by hand. Secrets stay in .env or a
+# systemd EnvironmentFile — do not put API tokens here, since a deploy
+# `git reset --hard` runs in this directory and the file is easy to leak
+# into a diff by accident.
+
+profile = "prod"
+
+# The API and board bind loopback only on this host; the kiosk is local.
+bind_host = "127.0.0.1"
+bind_port = 8100
+
+tz = "America/New_York"
+
+# Runtime state. Must be writable by the atlas service user.
+db_path = "/opt/atlas/runner/data/state.db"
+jobs_dir = "/opt/atlas/jobs"
+
+mqtt_host = "127.0.0.1"
+mqtt_port = 1883
+
+# Global daily spend ceiling (USD). The scheduler pauses when reached.
+daily_ceiling_usd = "5.00"
+model = "claude-sonnet-5"
+
+weather_lat = 40.7128
+weather_lon = -74.0060

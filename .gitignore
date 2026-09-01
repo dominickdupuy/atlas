@@ -3,6 +3,10 @@
 *.pem
 secrets.yaml
 
+# Host-local settings. The deployed tree IS /opt/atlas, so the runtime
+# config file sits inside the repo; the template is config.toml.example.
+config.toml
+
 # Python
 __pycache__/
 *.py[cod]
