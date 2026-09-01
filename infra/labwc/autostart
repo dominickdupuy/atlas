@@ -1,0 +1,24 @@
+# labwc autostart for the atlas kiosk.
+#
+# Install to ~/.config/labwc/autostart.
+#
+# IMPORTANT: labwc reads the FIRST autostart it finds — ~/.config/labwc/
+# then /etc/xdg/labwc/ — it does not merge them. Dropping a bare kiosk line
+# here would silently take away the taskbar, the desktop and the XDG
+# autostart set, so the stock file is sourced first and everything the
+# Raspberry Pi desktop normally starts still starts.
+
+. /etc/xdg/labwc/autostart
+
+# Screen blanking: nothing blanks the display unless an idle daemon is
+# running, and none is on this host (checked: no swayidle, no
+# xdg-screensaver). wlopm forces every output on at login in case one was
+# left powered down, which is the state the board must never be found in.
+# If blanking is later switched on in Raspberry Pi Configuration, it starts
+# swayidle -- remove it again, or the board goes dark at 3am.
+/usr/bin/wlopm --on '*' &
+
+# lwrespawn is the Pi desktop's own restart helper: it is what keeps the
+# panel alive, and it gives the kiosk the same treatment. Chromium dying at
+# 4am must not leave a blank screen until morning.
+/usr/bin/lwrespawn /opt/atlas/scripts/kiosk-start.sh &

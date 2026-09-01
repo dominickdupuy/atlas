@@ -1,0 +1,17 @@
+# Poll origin/release every 5 minutes.
+#
+# Persistent=false on purpose: a missed window while the Pi was off is not
+# worth a catch-up burst at boot, and OnBootSec already covers the restart
+# case with a delay that lets the network settle first.
+
+[Unit]
+Description=Check origin/release for a new atlas deploy every 5 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Unit=atlas-deploy.service
+
+[Install]
+WantedBy=timers.target

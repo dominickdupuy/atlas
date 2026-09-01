@@ -1,0 +1,13 @@
+# Allow the deploy timer to restart the runner, and nothing else.
+#
+# Install to /etc/sudoers.d/atlas with mode 0440, root:root, and ONLY after
+# `visudo -c -f` reports it clean — a malformed file in this directory takes
+# sudo down entirely for every user on the box.
+#
+# Scoped to one exact command. `systemctl restart atlas` and nothing more:
+# no wildcard, no `systemctl *`, which would be equivalent to full root
+# (systemctl can start a unit that runs anything).
+
+Cmnd_Alias ATLAS_RESTART = /usr/bin/systemctl restart atlas, /usr/bin/systemctl restart atlas.service
+
+domdd ALL=(root) NOPASSWD: ATLAS_RESTART

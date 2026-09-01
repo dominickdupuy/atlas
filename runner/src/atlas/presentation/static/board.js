@@ -117,6 +117,15 @@
     return (bytes / 1073741824).toFixed(1) + "G";
   }
 
+  function latency(ms) {
+    if (ms === null || ms === undefined) {
+      return "";
+    }
+    // Loopback probes land well under a millisecond; rounding them to "0ms"
+    // reads as broken rather than fast.
+    return (ms < 10 ? ms.toFixed(1) : String(Math.round(ms))) + "ms";
+  }
+
   function percent(value) {
     return value === null || value === undefined ? "—" : Math.round(value) + "%";
   }
@@ -268,7 +277,7 @@
           "span",
           "container-detail",
           container.reachable
-            ? Math.round(container.latency_ms || 0) + "ms " + container.endpoint
+            ? latency(container.latency_ms) + " " + container.endpoint
             : container.detail || "down"
         )
       );

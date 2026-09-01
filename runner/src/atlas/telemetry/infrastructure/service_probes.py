@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
@@ -55,8 +56,10 @@ class TcpServiceProbe:
         return f"{self._host}:{self._port}"
 
     async def check(self) -> ServiceStatus:
-        loop = asyncio.get_running_loop()
-        started = loop.time()
+        # perf_counter, not loop.time(): under uvloop the loop clock is
+        # libuv's, which is cached once per iteration, so a connect that
+        # completes within one iteration measures as exactly 0.0ms.
+        started = time.perf_counter()
         try:
             async with asyncio.timeout(self._timeout):
                 _, writer = await self._connect(self._host, self._port)
@@ -71,7 +74,7 @@ class TcpServiceProbe:
             return ServiceStatus(
                 name=self.name, endpoint=self.endpoint, reachable=False, detail=str(exc)
             )
-        latency_ms = (loop.time() - started) * 1000.0
+        latency_ms = (time.perf_counter() - started) * 1000.0
         writer.close()
         # The peer hanging up on an unspoken protocol is expected; we already
         # have the only answer we wanted, which is that it accepted at all.

@@ -231,7 +231,7 @@ def build_alerts(
                 Alert(
                     severity="critical",
                     kind="job_failed",
-                    summary=f"{run.job_id} {run.state}",
+                    summary=f"{run.job_id} {str(run.state).replace('_', ' ')}",
                     detail=run.error,
                     at=run.finished_at or run.started_at,
                 )

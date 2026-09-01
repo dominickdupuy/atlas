@@ -1,0 +1,43 @@
+# The atlas runner: HTTP API (D16), scheduler, and the passive ops board.
+#
+# Install with scripts/install-systemd.sh, which validates the sudoers
+# drop-in before touching anything.
+#
+# Secrets live in /etc/atlas/atlas.env, deliberately OUTSIDE the repo: every
+# deploy runs `git reset --hard` in /opt/atlas, so anything kept in the tree
+# is one deploy away from being replaced or one `git add -A` away from being
+# published.
+
+[Unit]
+Description=atlas job runner (API, scheduler, ops board)
+Documentation=file:///opt/atlas/docs/architecture.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=domdd
+Group=domdd
+WorkingDirectory=/opt/atlas/runner
+
+# `-` prefix: the host has not necessarily been given credentials yet, and a
+# missing env file should leave the service in dev profile, not dead.
+EnvironmentFile=-/etc/atlas/atlas.env
+
+# `atlas serve` is uvicorn — it calls uvicorn.run() on the app built by the
+# composition root. The app cannot be named as an import string for uvicorn's
+# CLI because create_app() takes the wired Application (D18).
+ExecStart=/home/domdd/.local/bin/uv run --frozen atlas serve
+
+Restart=on-failure
+RestartSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=atlas
+
+[Install]
+WantedBy=multi-user.target

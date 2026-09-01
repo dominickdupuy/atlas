@@ -1,0 +1,26 @@
+# One deploy attempt: fetch origin/release, and if it moved, reset, sync and
+# restart atlas. Driven by atlas-deploy.timer.
+#
+# NoNewPrivileges is deliberately NOT set here: this unit's whole job ends in
+# `sudo systemctl restart atlas`, which the sudoers drop-in permits and which
+# NoNewPrivileges would silently break.
+
+[Unit]
+Description=atlas deploy: fast-forward to origin/release
+Documentation=file:///opt/atlas/scripts/deploy.sh
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=domdd
+Group=domdd
+WorkingDirectory=/opt/atlas
+ExecStart=/opt/atlas/scripts/deploy.sh
+
+# The fetch talks to GitHub over the deploy key in ~/.ssh.
+Environment=HOME=/home/domdd
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=atlas-deploy

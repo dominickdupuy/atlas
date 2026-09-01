@@ -30,6 +30,17 @@
   box-sizing: border-box;
 }
 
+/*
+ * Load-bearing. Several panels below set `display`, and a class-level
+ * display rule outranks the user-agent's `[hidden] { display: none }`, so
+ * toggling `.hidden` from JS silently does nothing. That bug showed the
+ * "NO DATA" banner on top of perfectly live data — exactly the confusion
+ * the banner exists to prevent.
+ */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   margin: 0;
