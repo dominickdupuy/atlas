@@ -219,6 +219,17 @@ $ curl -s -H "Authorization: Bearer proof-token" http://127.0.0.1:8101/api/statu
 Timer fired 00:29:55, new version served by 00:29:58. The board header on the
 monitor now reads `atlas v0.1.1 · bed0d57`.
 
+**Path 2 again, then path 1 again** — repeated on the final commit to show the loop
+is not a one-off:
+
+```
+Sep 01 00:35:06 deploy: updating d541714a4f62 -> 792b5b9825b1
+Sep 01 00:35:06 deploy: deployed 792b5b9825b1
+Sep 01 00:40:16 deploy: already at 792b5b9825b1; nothing to do
+```
+
+Confirmed from the running service at 00:35:16: `version=0.1.1 revision=792b5b9`.
+
 ---
 
 ## Running log
