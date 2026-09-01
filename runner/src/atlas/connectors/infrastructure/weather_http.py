@@ -73,13 +73,16 @@ class OpenMeteoWeatherClient:
         )
 
 
-BOARD_TTL_SECONDS = 60.0
-"""Refetch cadence, set to 60s by request.
+BOARD_TTL_SECONDS = 900.0
+"""Fallback refetch cadence, used until the API tells us its own.
 
-Open-Meteo updates its model output far less often than this, so most of
-these requests return an identical payload; at 1440 calls/day that is still
-well inside its free fair-use allowance. Raise it back if the allowance ever
-matters — the board reads whatever is cached and does not care."""
+Open-Meteo reports `current.interval` — the width of the bucket it is serving,
+900s at the time of writing. Polling faster than that returns a byte-identical
+payload, so the client adopts whatever the API declares and re-tunes itself if
+that ever changes. See `_ttl_from`."""
+
+MIN_TTL_SECONDS = 60.0
+MAX_TTL_SECONDS = 3600.0
 
 FORECAST_DAYS = 2
 
@@ -107,11 +110,21 @@ class OpenMeteoForecastClient:
         self._clock = clock or SystemClock()
         self._cached: WeatherReport | None = None
         self._fetched_at: dt.datetime | None = None
+        self._effective_ttl = ttl_seconds
 
     def _is_fresh(self, now: dt.datetime) -> bool:
         if self._cached is None or self._fetched_at is None:
             return False
-        return (now - self._fetched_at).total_seconds() < self._ttl
+        return (now - self._fetched_at).total_seconds() < self._effective_ttl
+
+    def _ttl_from(self, payload: dict[str, object]) -> float:
+        """Adopt the API's declared update interval, clamped to something
+        sane in case the field is ever absent or absurd."""
+        current = payload.get("current")
+        interval = current.get("interval") if isinstance(current, dict) else None
+        if not isinstance(interval, int | float) or interval <= 0:
+            return self._ttl
+        return max(MIN_TTL_SECONDS, min(MAX_TTL_SECONDS, float(interval)))
 
     async def get_report(self, latitude: float, longitude: float) -> WeatherReport:
         now = self._clock.now()
@@ -134,7 +147,9 @@ class OpenMeteoForecastClient:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 response = await client.get(_BASE_URL, params=params)
                 response.raise_for_status()
-                report = parse_forecast(response.json(), now)
+                payload = response.json()
+                report = parse_forecast(payload, now)
+                self._effective_ttl = self._ttl_from(payload)
         except Exception as exc:
             logger.warning("weather fetch failed: %s", exc)
             if self._cached is not None:

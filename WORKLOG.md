@@ -429,6 +429,30 @@ Weather at 60s is ~1440 calls/day, well inside Open-Meteo's free fair-use
 allowance. Open-Meteo updates model output far less often than that, so most
 of those requests return an identical payload.
 
+## 2026-09-01 18:45 — Refetch cadences set from evidence
+
+**Weather now takes its cadence from the API.** Open-Meteo reports
+`current.interval` — the width of the bucket it is serving, 900s at present —
+so polling faster returns a byte-identical payload. The client reads that field
+and adopts it, clamped to 60s..1h, falling back to 900s if it is ever missing
+or absurd. If Open-Meteo changes its cadence, the Pi follows without anyone
+editing a constant.
+
+**Calendar stays at 60s** so a republished feed is picked up quickly, and the
+polling was made cheap rather than merely frequent. Exchange sends no cache
+headers, so there is no conditional GET to lean on and every poll transfers the
+whole ~52KB file. What can be avoided is the expensive half: the payload is
+digested, and an unchanged one reuses the parsed expansion, so a minute-by-
+minute poll costs one download and no CPU. Recurrence expansion runs once per
+actual change, not once a minute.
+
+Verified live: 75s after a restart the calendar had refetched and the weather
+correctly had not.
+
+Note on testing the reuse: identity of the returned tuple cannot be asserted,
+because `CalendarFeed` is a pydantic model and rebuilds it on construction. The
+tests spy on `_expand` and count calls instead, which is the actual claim.
+
 ## Running log
 
 ### 23:51 — Orientation

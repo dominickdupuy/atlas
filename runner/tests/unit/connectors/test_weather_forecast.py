@@ -10,7 +10,13 @@ from datetime import UTC, datetime
 
 import pytest
 
-from atlas.connectors.infrastructure.weather_http import parse_forecast
+from atlas.connectors.infrastructure.weather_http import (
+    BOARD_TTL_SECONDS,
+    MAX_TTL_SECONDS,
+    MIN_TTL_SECONDS,
+    OpenMeteoForecastClient,
+    parse_forecast,
+)
 
 NOW = datetime(2026, 9, 1, 20, 0, tzinfo=UTC)
 
@@ -97,3 +103,26 @@ def test_missing_fields_are_skipped_rather_than_faked() -> None:
     report = parse_forecast(payload, NOW)
 
     assert report.days == (), "a day without a high is dropped, not defaulted to zero"
+
+
+# --- self-tuning refetch cadence -------------------------------------------
+
+
+def test_client_adopts_the_interval_the_api_declares() -> None:
+    """Open-Meteo reports the width of the bucket it is serving. Polling
+    faster returns a byte-identical payload, so the client takes its cadence
+    from the API rather than from a number someone guessed."""
+    client = OpenMeteoForecastClient()
+
+    assert client._ttl_from({"current": {"interval": 900}}) == 900.0
+    assert client._ttl_from({"current": {"interval": 300}}) == 300.0
+
+
+def test_an_absurd_or_missing_interval_falls_back() -> None:
+    client = OpenMeteoForecastClient()
+
+    assert client._ttl_from({}) == BOARD_TTL_SECONDS
+    assert client._ttl_from({"current": {}}) == BOARD_TTL_SECONDS
+    assert client._ttl_from({"current": {"interval": 0}}) == BOARD_TTL_SECONDS
+    assert client._ttl_from({"current": {"interval": 5}}) == MIN_TTL_SECONDS
+    assert client._ttl_from({"current": {"interval": 999999}}) == MAX_TTL_SECONDS

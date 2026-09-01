@@ -150,3 +150,59 @@ async def test_window_bounds_are_respected(days: int) -> None:
     feed = await client.get_events(start, start + timedelta(days=days))
 
     assert all(start <= e.start < start + timedelta(days=days) for e in feed.events)
+
+
+def _count_expansions(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    """Spy on the expensive half. Identity of the returned tuple cannot be
+    used: CalendarFeed is a pydantic model and rebuilds it on construction."""
+    import atlas.connectors.infrastructure.ics_calendar as module
+
+    calls: list[int] = []
+    original = module._expand
+
+    def counting(raw: bytes, start: datetime, end: datetime) -> object:
+        calls.append(1)
+        return original(raw, start, end)
+
+    monkeypatch.setattr(module, "_expand", counting)
+    return calls
+
+
+async def test_an_unchanged_feed_is_not_reparsed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Polling every 60s must not mean expanding recurrence every 60s. When
+    the bytes are identical the previous expansion is reused, so a frequent
+    poll costs one download and no CPU on the Pi."""
+    expansions = _count_expansions(monkeypatch)
+    clock = FrozenClock(datetime(2026, 9, 1, 12, 0, tzinfo=UTC))
+    fetches: list[int] = []
+    client = _client(fetches, clock=clock)
+    start, end = _window()
+
+    first = await client.get_events(start, end)
+    clock.advance(1000)
+    second = await client.get_events(start, end)
+
+    assert len(fetches) == 2, "it did refetch"
+    assert len(expansions) == 1, "but parsed only once"
+    assert second.events == first.events
+
+
+async def test_a_changed_feed_is_reparsed(monkeypatch: pytest.MonkeyPatch) -> None:
+    expansions = _count_expansions(monkeypatch)
+    clock = FrozenClock(datetime(2026, 9, 1, 12, 0, tzinfo=UTC))
+    payloads = [FIXTURE.read_bytes(), FIXTURE.read_bytes().replace(b"Advising", b"Rescheduled")]
+    calls: list[int] = []
+
+    async def changing() -> bytes:
+        calls.append(1)
+        return payloads[min(len(calls) - 1, 1)]
+
+    client = IcsCalendarClient("https://example.invalid/cal.ics", clock=clock, fetch=changing)
+    start, end = _window()
+
+    await client.get_events(start, end)
+    clock.advance(1000)
+    second = await client.get_events(start, end)
+
+    assert len(expansions) == 2, "changed bytes must be re-parsed"
+    assert "Rescheduled" in {event.summary for event in second.events}

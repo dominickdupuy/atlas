@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import hashlib
 import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -42,13 +43,20 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT_SECONDS = 20.0
 DEFAULT_TTL_SECONDS = 60.0
-"""Refetch cadence, set to 60s by request.
+"""Refetch cadence. Kept short so the board picks up a republished feed
+quickly.
 
 Worth knowing what this does and does not buy: Exchange regenerates a
 published feed on its own schedule and returns no cache headers at all, so an
 edit in Outlook still will not appear until Microsoft republishes. This
 shortens only the second half of that delay — our copy is at most a minute
-behind Microsoft's, rather than at most fifteen."""
+behind Microsoft's rather than fifteen.
+
+Because there are no cache headers there is no conditional GET to lean on
+either, so every poll transfers the whole file. What the client can avoid is
+the expensive half: an unchanged payload is detected by digest and the parsed
+expansion is reused, so a minute-by-minute poll costs one download and no
+CPU."""
 
 MAX_EVENTS = 200
 
@@ -71,6 +79,7 @@ class IcsCalendarClient:
         self._clock = clock or SystemClock()
         self._fetch: Fetcher = fetch or self._http_fetch
         self._raw: bytes | None = None
+        self._digest: str | None = None
         self._fetched_at: dt.datetime | None = None
         self._last_error: str | None = None
         self._expanded: tuple[bytes, dt.datetime, dt.datetime, tuple[CalendarEvent, ...]] | None = (
@@ -92,7 +101,14 @@ class IcsCalendarClient:
         now = self._clock.now()
         if not self._is_fresh(now):
             try:
-                self._raw = await self._fetch()
+                fetched = await self._fetch()
+                digest = hashlib.sha256(fetched).hexdigest()
+                # Keep the SAME bytes object when nothing changed: the
+                # expansion cache below is keyed on its identity, so an
+                # unchanged feed costs no re-parse at all.
+                if digest != self._digest or self._raw is None:
+                    self._raw = fetched
+                    self._digest = digest
                 self._fetched_at = now
                 self._last_error = None
             except Exception as exc:
