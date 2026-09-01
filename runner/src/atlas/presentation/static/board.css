@@ -1,42 +1,55 @@
 /*
- * The passive ops board (D11).
+ * atlas ops board — implementation of the "Atlas Board" design canvas.
  *
- * Sizing is in vw/vh throughout, not px: the board is read from across a
- * room, and the only thing that matters is how much of the screen a line of
- * text occupies. At 1080p, 1vw = 19.2px, so the 1.05vw body text lands at
- * about 20px and the alert headlines at roughly 34px.
+ * The board is a fixed 1920x1080 canvas scaled to the viewport with a
+ * transform, exactly as the design's fit() does. Everything below is
+ * therefore in canvas pixels: one set of numbers, identical proportions on
+ * any panel. (This host's monitor reports a 1024x768 maximum, so it renders
+ * at ~0.53 scale — see WORKLOG.md.)
  *
- * The page is exactly one viewport tall with overflow hidden. Nothing may
- * scroll, because there is no input device to scroll it with; anything that
- * would overflow is truncated server-side and reported as a count.
+ * Design tokens are lifted from the canvas verbatim so the two stay
+ * comparable.
  */
 
 :root {
-  --bg: #080b10;
-  --panel: #121820;
-  --panel-edge: #1f2a37;
-  --ink: #e6edf3;
-  --ink-dim: #8b949e;
-  --ok: #3fb950;
-  --warn: #ffb020;
-  --crit: #ff4d4f;
-  --accent: #58a6ff;
+  --bg: #05070b;
+  --ink: #f2f6fb;
+  --ink-60: rgba(226, 238, 252, 0.6);
+  --ink-55: rgba(226, 238, 252, 0.55);
+  --ink-50: rgba(226, 238, 252, 0.5);
+  --ink-45: rgba(226, 238, 252, 0.45);
+  --ink-42: rgba(226, 238, 252, 0.42);
+  --ink-35: rgba(226, 238, 252, 0.35);
 
-  --gap: 0.7vw;
-  --radius: 0.5vw;
+  --blue: #0a84ff;
+  --cyan: #64d2ff;
+  --purple: #bf5af2;
+  --orange: #ff9f0a;
+  --green: #30d158;
+  --red: #ff453a;
+  --green-text: #4ede77;
+  --amber-text: #e3b341;
+  --red-text: #ff6b62;
+  --blue-text: #7cc0ff;
+
+  --glass: rgba(255, 255, 255, 0.055);
+  --glass-edge: rgba(255, 255, 255, 0.11);
+  --glass-inset: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  --glass-drop: 0 24px 60px rgba(0, 0, 0, 0.5);
+  /* One switch: backdrop-filter is the most expensive thing on this page and
+     this box has no discrete GPU. Set to `none` if the board ever janks. */
+  --glass-blur: blur(34px) saturate(180%);
+
+  --radius: 18px;
 }
 
 * {
   box-sizing: border-box;
 }
 
-/*
- * Load-bearing. Several panels below set `display`, and a class-level
- * display rule outranks the user-agent's `[hidden] { display: none }`, so
- * toggling `.hidden` from JS silently does nothing. That bug showed the
- * "NO DATA" banner on top of perfectly live data — exactly the confusion
- * the banner exists to prevent.
- */
+/* Load-bearing: several rules below set `display`, and a class-level display
+   declaration outranks the user agent's `[hidden] { display: none }`. Without
+   this, hiding the staleness banner from JS silently does nothing. */
 [hidden] {
   display: none !important;
 }
@@ -47,438 +60,861 @@ body {
   padding: 0;
   height: 100%;
   overflow: hidden;
+  background: var(--bg);
 }
 
 body {
-  background: var(--bg);
   color: var(--ink);
-  font-family: "Inter", "DejaVu Sans", system-ui, sans-serif;
-  font-size: 1.05vw;
-  line-height: 1.35;
-  display: flex;
-  flex-direction: column;
-  /* No pointer exists; make sure a stray USB mouse cannot leave a cursor
-     burned into a screen that runs 24/7. */
+  font-family: "SF Pro Display", -apple-system, BlinkMacSystemFont, Geist, "Helvetica Neue",
+    sans-serif;
+  /* No pointer exists at this display; a stray cursor must not burn into a
+     screen that runs 24/7. */
   cursor: none;
   user-select: none;
 }
 
-/* --- top bar ------------------------------------------------------------ */
-
-.bar {
+.wrap {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  padding: 0.8vw 1.2vw 0.5vw;
-  gap: var(--gap);
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
 }
 
-.identity {
+.board {
+  box-sizing: border-box;
+  width: 1920px;
+  height: 1080px;
+  flex: none;
+  transform-origin: center center;
+  position: relative;
+  overflow: hidden;
+  padding: 48px 56px 44px;
   display: flex;
-  align-items: baseline;
-  gap: 0.6vw;
+  flex-direction: column;
+  gap: 24px;
+  background: radial-gradient(120% 90% at 12% -10%, #16233b 0%, #0a0f18 46%, #05070b 100%);
+  color: var(--ink);
+}
+
+.glow {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.glow-a {
+  top: -240px;
+  left: 8%;
+  width: 900px;
+  height: 640px;
+  background: rgba(10, 132, 255, 0.16);
+  filter: blur(140px);
+}
+
+.glow-b {
+  bottom: -320px;
+  right: -80px;
+  width: 820px;
+  height: 700px;
+  background: rgba(120, 80, 220, 0.13);
+  filter: blur(150px);
+}
+
+/* --- header ------------------------------------------------------------- */
+
+.head {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 32px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.mark {
+  width: 46px;
+  height: 46px;
+  border-radius: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.04));
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.mark svg {
+  width: 26px;
+  height: 26px;
 }
 
 .wordmark {
-  font-size: 2vw;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-size: 27px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1;
 }
 
-.rev {
-  font-family: ui-monospace, "DejaVu Sans Mono", monospace;
-  font-size: 0.85vw;
-  color: var(--ink-dim);
+.build {
+  font-family: ui-monospace, "SF Mono", "DejaVu Sans Mono", monospace;
+  font-size: 13px;
+  color: var(--ink-35);
+  letter-spacing: 0.01em;
 }
 
-.state {
-  font-size: 1.5vw;
-  font-weight: 700;
+.head-right {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+}
+
+.pill {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 18px 9px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 10px 30px rgba(0, 0, 0, 0.4);
+  backdrop-filter: var(--glass-blur);
+}
+
+.pill-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--cyan);
+  box-shadow: 0 0 12px rgba(100, 210, 255, 0.9);
+}
+
+.pill-text {
+  font-size: 15px;
+  font-weight: 600;
   letter-spacing: 0.12em;
-  padding: 0.15vw 0.9vw;
-  border-radius: var(--radius);
-  border: 0.12vw solid var(--panel-edge);
-  color: var(--ink-dim);
 }
 
-.state[data-mode="APPROVAL_PENDING"] {
-  color: #07100a;
-  background: var(--warn);
-  border-color: var(--warn);
+/* The design's pill carries the display mode; APPROVAL_PENDING is the one
+   state that must read across a room, so it takes the whole pill amber. */
+.pill[data-mode="APPROVAL_PENDING"] {
+  background: rgba(255, 159, 10, 0.9);
+  border-color: rgba(255, 159, 10, 0.9);
+  color: #140c02;
+}
+
+.pill[data-mode="APPROVAL_PENDING"] .pill-dot {
+  background: #140c02;
+  box-shadow: none;
+}
+
+.clockwrap {
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.clockline {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
 }
 
 .clock {
-  text-align: right;
+  font-size: 62px;
+  font-weight: 300;
+  letter-spacing: -0.035em;
+  line-height: 0.9;
   font-variant-numeric: tabular-nums;
 }
 
-.clock-label {
-  display: block;
-  font-size: 0.75vw;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--ink-dim);
+.meridiem {
+  font-size: 22px;
+  font-weight: 500;
+  color: var(--ink-55);
 }
 
-.clock-value {
-  font-size: 1.35vw;
-  font-weight: 600;
+.datestr {
+  font-size: 15px;
+  color: var(--ink-55);
+  letter-spacing: 0.01em;
 }
 
-/* --- staleness banner ---------------------------------------------------- */
+/* --- attention band ------------------------------------------------------ */
 
-/*
- * The most important rule on the page. A board that has silently stopped
- * updating looks exactly like a healthy one, so when the poll fails the
- * whole screen must visibly change, not just a corner of it.
- */
+.attention {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  border-radius: var(--radius);
+  padding: 14px 22px 16px;
+  background: rgba(255, 69, 58, 0.13);
+  border: 1px solid rgba(255, 69, 58, 0.4);
+  box-shadow: var(--glass-inset), 0 18px 44px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 
-.staleness {
+.attention[data-severity="warning"] {
+  background: rgba(255, 159, 10, 0.12);
+  border-color: rgba(255, 159, 10, 0.38);
+}
+
+.attention-head {
   display: flex;
   align-items: baseline;
-  gap: 1vw;
-  margin: 0 1.2vw 0.4vw;
-  padding: 0.55vw 1vw;
-  border-radius: var(--radius);
-  background: var(--crit);
-  color: #140606;
+  justify-content: space-between;
 }
 
-.staleness-title {
-  font-size: 1.5vw;
+.attention-title {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: #ffd9d6;
+}
+
+.attention[data-severity="warning"] .attention-title {
+  color: #ffe4bd;
+}
+
+.attention-more {
+  font-size: 14px;
+  color: var(--ink-55);
+}
+
+.attention-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.attention-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+}
+
+.att-summary {
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.attention-list li[data-severity="critical"] .att-summary {
+  color: #ff8a83;
+}
+
+.attention-list li[data-severity="warning"] .att-summary {
+  color: #ffc46b;
+}
+
+.attention-list li[data-severity="approval"] .att-summary {
+  color: #ffd79a;
+}
+
+.att-detail {
+  font-size: 15px;
+  color: var(--ink-55);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.att-at {
+  font-size: 15px;
+  color: var(--ink-42);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- staleness ----------------------------------------------------------- */
+
+.stale {
+  position: relative;
+  z-index: 2;
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 20px;
+  padding: 12px 22px;
+  border-radius: var(--radius);
+  background: var(--red);
+  color: #170404;
+}
+
+.stale-title {
+  font-size: 27px;
   font-weight: 800;
   letter-spacing: 0.1em;
 }
 
-.staleness-detail {
-  font-size: 1.15vw;
+.stale-detail {
+  font-size: 19px;
   font-weight: 600;
 }
 
-body[data-stale="true"] main {
-  /* Dim the data itself: everything below is, by definition, no longer
-     known to be true. */
-  opacity: 0.45;
-  filter: grayscale(0.7);
+/* Everything below is, by definition, no longer known to be true. */
+body[data-stale="true"] .main,
+body[data-stale="true"] .attention,
+body[data-stale="true"] .head-right .pill {
+  opacity: 0.42;
+  filter: grayscale(0.75);
 }
 
 /* --- layout -------------------------------------------------------------- */
 
-.grid {
+.main {
+  position: relative;
+  z-index: 1;
   flex: 1;
   min-height: 0;
-  display: grid;
-  grid-template-columns: 1.55fr 1fr;
-  grid-template-rows: minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, 0.85fr);
-  gap: var(--gap);
-  padding: 0 1.2vw 1vw;
+  display: flex;
+  flex-direction: row;
+  gap: 24px;
 }
 
 .panel {
-  background: var(--panel);
-  border: 0.1vw solid var(--panel-edge);
   border-radius: var(--radius);
-  padding: 0.7vw 1vw 0.8vw;
-  min-height: 0;
-  overflow: hidden;
+  background: var(--glass);
+  border: 1px solid var(--glass-edge);
+  box-shadow: var(--glass-inset), inset 0 -1px 0 rgba(255, 255, 255, 0.05), var(--glass-drop);
+  backdrop-filter: var(--glass-blur);
   display: flex;
   flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 
-.panel h2 {
-  margin: 0 0 0.5vw;
-  font-size: 0.9vw;
-  font-weight: 700;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--ink-dim);
+.panel-timeline {
+  flex: 1;
+  min-width: 0;
+  padding: 22px 24px 18px;
 }
 
-.panel h2 .count {
+.rail {
+  width: 470px;
+  flex: none;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.panel-weather,
+.panel-system {
+  flex: none;
+  padding: 20px 24px;
+  gap: 14px;
+}
+
+.panel-runs {
+  flex: 1;
+  min-height: 0;
+  padding: 20px 24px;
+  gap: 14px;
+}
+
+.panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+
+.panel-title {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: var(--ink-50);
+}
+
+.panel-source {
+  font-size: 13px;
+  color: var(--ink-42);
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 62%;
+}
+
+/* --- timeline ------------------------------------------------------------ */
+
+.daybar {
+  display: flex;
+  gap: 10px;
+  padding-left: 62px;
+  margin: 14px 0 10px;
+}
+
+.day {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0 4px 9px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.day[data-today="true"] {
+  border-bottom: 2px solid rgba(10, 132, 255, 0.65);
+}
+
+.day-name {
+  font-size: 26px;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  color: rgba(242, 246, 251, 0.82);
+}
+
+.day[data-today="true"] .day-name {
+  font-weight: 600;
   color: var(--ink);
 }
 
-/* Attention spans the full height of the left column: it is the reason the
-   screen exists (D11), so it gets the space and the top-left corner. */
-.panel-alerts {
-  grid-column: 1;
-  grid-row: 1;
+.day-today {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--cyan);
+  margin-left: 10px;
 }
-.panel-runs {
-  grid-column: 1;
-  grid-row: 2 / span 2;
+
+.day-count {
+  font-size: 13px;
+  color: var(--ink-42);
 }
-.panel-approvals {
-  grid-column: 2;
-  grid-row: 1;
-}
-.panel-mode {
-  grid-column: 2;
-  grid-row: 2;
-}
-.panel-containers {
-  grid-column: 2;
-  grid-row: 3;
-}
-.panel-system {
-  grid-column: 1 / span 2;
-  grid-row: 4;
+
+.day[data-today="true"] .day-count {
+  color: var(--ink-50);
 }
 
 .grid {
-  grid-template-rows: minmax(0, 1.1fr) minmax(0, 0.95fr) minmax(0, 0.95fr) auto;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 10px;
 }
 
-ul,
-ol {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.gutter {
+  width: 52px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.hour {
+  flex: 1;
+  position: relative;
+}
+
+.hour span {
+  position: absolute;
+  top: -7px;
+  right: 0;
+  font-size: 12px;
+  color: rgba(226, 238, 252, 0.38);
+  font-variant-numeric: tabular-nums;
+}
+
+.hour[data-noon="true"] span {
+  color: var(--ink-55);
+  font-weight: 500;
+}
+
+.cols {
+  flex: 1;
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+}
+
+.col {
+  flex: 1;
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.09) 0px,
+    rgba(255, 255, 255, 0.09) 1px,
+    transparent 1px,
+    transparent var(--hour-pct)
+  );
+}
+
+.col[data-today="true"] {
+  border-color: rgba(255, 255, 255, 0.09);
+  background: linear-gradient(180deg, rgba(10, 132, 255, 0.07), rgba(10, 132, 255, 0.02)),
+    repeating-linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0.1) 0px,
+      rgba(255, 255, 255, 0.1) 1px,
+      transparent 1px,
+      transparent var(--hour-pct)
+    );
+}
+
+.ev {
+  position: absolute;
+  left: 2%;
+  right: 2%;
+  border-radius: 7px;
+  border-left: 3px solid var(--cyan);
+  background: rgba(100, 210, 255, 0.13);
+  border-top: 1px solid rgba(100, 210, 255, 0.28);
+  border-right: 1px solid rgba(100, 210, 255, 0.28);
+  border-bottom: 1px solid rgba(100, 210, 255, 0.28);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.ev.tall {
+  flex-direction: column;
+  align-items: flex-start;
+  /* Anchored to the top: the label marks when the block STARTS. Centring it
+     in a tall band made an 06:00 band look like it began at 6 PM. */
+  justify-content: flex-start;
+  gap: 3px;
+  padding: 7px 12px;
+  border-radius: 8px;
+}
+
+/* A recurring range sits behind the discrete events that fall inside it,
+   and labels itself at its START. Vertically centred, a 06:00-22:30 band
+   printed its name at 2 PM, which reads as an event at 2 PM. */
+.ev.band {
+  z-index: 1;
+  opacity: 0.75;
+  align-items: flex-start;
+  padding-top: 5px;
+}
+
+.ev {
+  z-index: 2;
+}
+
+.ev-label {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ev-detail {
+  font-size: 12px;
+  color: var(--ink-60);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ev[data-status="completed"] {
+  border-left-color: var(--green);
+  background: rgba(48, 209, 88, 0.13);
+  border-top-color: rgba(48, 209, 88, 0.3);
+  border-right-color: rgba(48, 209, 88, 0.3);
+  border-bottom-color: rgba(48, 209, 88, 0.3);
+}
+
+.ev[data-status="failed"],
+.ev[data-status="timed_out"] {
+  border-left-color: var(--red);
+  background: rgba(255, 69, 58, 0.17);
+  border-top-color: rgba(255, 69, 58, 0.38);
+  border-right-color: rgba(255, 69, 58, 0.38);
+  border-bottom-color: rgba(255, 69, 58, 0.38);
+}
+
+.ev[data-status="awaiting_approval"] {
+  border-left-color: var(--orange);
+  background: rgba(255, 159, 10, 0.15);
+  border-top-color: rgba(255, 159, 10, 0.32);
+  border-right-color: rgba(255, 159, 10, 0.32);
+  border-bottom-color: rgba(255, 159, 10, 0.32);
+}
+
+.ev[data-status="running"] {
+  border-left-color: var(--blue);
+  background: rgba(10, 132, 255, 0.17);
+  border-top-color: rgba(10, 132, 255, 0.34);
+  border-right-color: rgba(10, 132, 255, 0.34);
+  border-bottom-color: rgba(10, 132, 255, 0.34);
+}
+
+.ev[data-kind="job_scheduled"] {
+  border-left-style: dashed;
+  background: rgba(100, 210, 255, 0.07);
+  border-top-color: rgba(100, 210, 255, 0.18);
+  border-right-color: rgba(100, 210, 255, 0.18);
+  border-bottom-color: rgba(100, 210, 255, 0.18);
+}
+
+.nowline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 2px solid var(--red);
+  box-shadow: 0 0 14px rgba(255, 69, 58, 0.6);
+  z-index: 3;
+}
+
+.nowline span {
+  position: absolute;
+  left: 0;
+  top: -5px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--red);
+}
+
+.legend {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding-top: 14px;
+  font-size: 12px;
+  color: var(--ink-45);
+  letter-spacing: 0.02em;
+}
+
+.key {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.key i {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  display: block;
+}
+
+.key i[data-cat="atlas"] {
+  background: var(--cyan);
+}
+.key i[data-cat="ok"] {
+  background: var(--green);
+}
+.key i[data-cat="pending"] {
+  background: var(--orange);
+}
+.key i[data-cat="fail"] {
+  background: var(--red);
+}
+.key i[data-cat="work"] {
+  background: var(--blue);
+}
+
+.legend-note {
+  margin-left: auto;
+  color: var(--ink-35);
+}
+
+/* --- weather -------------------------------------------------------------- */
+
+.weather-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.wx-main {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.wx-temp {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.wx-deg {
+  font-size: 68px;
+  font-weight: 200;
+  line-height: 0.85;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.wx-unit {
+  font-size: 24px;
+  font-weight: 300;
+  color: var(--ink-60);
+}
+
+.wx-right {
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.wx-summary {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.wx-hilo {
+  font-size: 14px;
+  color: var(--ink-50);
+  font-variant-numeric: tabular-nums;
+}
+
+.wx-unavailable {
+  font-size: 15px;
+  color: var(--ink-45);
+  line-height: 1.5;
+}
+
+.wx-unavailable strong {
+  display: block;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--ink-55);
+  margin-bottom: 4px;
+}
+
+/* --- runs ----------------------------------------------------------------- */
+
+.runs {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.run {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 3px 12px;
+  align-items: center;
+  padding: 9px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.run:last-child {
+  border-bottom: 0;
+}
+
+.run-job {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--cyan);
+}
+
+.run-state {
+  justify-self: end;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(88, 166, 255, 0.16);
+  color: var(--blue-text);
+  white-space: nowrap;
+}
+
+.run[data-state="completed"] .run-state {
+  background: rgba(48, 209, 88, 0.16);
+  color: var(--green-text);
+}
+
+.run[data-state="failed"] .run-state,
+.run[data-state="timed_out"] .run-state {
+  background: rgba(248, 81, 73, 0.2);
+  color: var(--red-text);
+}
+
+.run[data-state="awaiting_approval"] .run-state {
+  background: rgba(210, 153, 34, 0.2);
+  color: var(--amber-text);
+}
+
+.run-detail {
+  font-size: 13px;
+  color: var(--ink-45);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run[data-state="failed"] .run-detail,
+.run[data-state="timed_out"] .run-detail {
+  color: rgba(255, 107, 98, 0.72);
+}
+
+.run-at {
+  justify-self: end;
+  font-size: 13px;
+  color: var(--ink-42);
+  font-variant-numeric: tabular-nums;
 }
 
 .empty {
-  margin: 0.2vw 0 0;
-  color: var(--ink-dim);
-  font-size: 1vw;
+  font-size: 15px;
+  color: var(--ink-45);
+  padding: 8px 0;
 }
 
-.more {
-  margin: 0.4vw 0 0;
-  color: var(--warn);
-  font-size: 0.95vw;
-  font-weight: 700;
-}
+/* --- system --------------------------------------------------------------- */
 
-.hint {
-  margin: auto 0 0;
-  font-size: 0.8vw;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--ink-dim);
-}
-
-/* --- alerts -------------------------------------------------------------- */
-
-.alerts li {
-  display: flex;
-  align-items: baseline;
-  gap: 0.7vw;
-  padding: 0.35vw 0;
-  border-bottom: 0.06vw solid rgba(255, 255, 255, 0.06);
-}
-
-.alerts li:last-child {
-  border-bottom: 0;
-}
-
-.alert-summary {
-  font-size: 1.45vw;
-  font-weight: 700;
-}
-
-.alert-detail {
-  font-size: 0.95vw;
-  color: var(--ink-dim);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex: 1;
-}
-
-.alert-at {
-  font-size: 0.95vw;
-  color: var(--ink-dim);
-  font-variant-numeric: tabular-nums;
-}
-
-li[data-severity="critical"] .alert-summary {
-  color: var(--crit);
-}
-
-li[data-severity="warning"] .alert-summary {
-  color: var(--warn);
-}
-
-/* --- approvals ----------------------------------------------------------- */
-
-.approvals li {
-  padding: 0.3vw 0;
-  font-size: 1.1vw;
-  border-bottom: 0.06vw solid rgba(255, 255, 255, 0.06);
-}
-
-.approvals li:last-child {
-  border-bottom: 0;
-}
-
-.approval-summary {
-  display: block;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.approval-meta {
-  font-size: 0.8vw;
-  color: var(--ink-dim);
-}
-
-/* --- authority / mode ---------------------------------------------------- */
-
-.mode-headline {
-  font-size: 1.9vw;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-}
-
-.mode-block[data-write="true"] .mode-headline {
-  color: var(--crit);
-}
-
-.mode-block[data-write="false"] .mode-headline {
-  color: var(--ok);
-}
-
-.mode-detail {
-  font-size: 0.95vw;
-  color: var(--ink-dim);
-  margin-top: 0.2vw;
-}
-
-.service-line {
-  margin-top: auto;
-  font-size: 0.9vw;
-  color: var(--ink-dim);
-  font-variant-numeric: tabular-nums;
-}
-
-/* --- runs table ---------------------------------------------------------- */
-
-.runs {
-  width: 100%;
-  border-collapse: collapse;
-  font-variant-numeric: tabular-nums;
-}
-
-.runs td {
-  padding: 0.28vw 0.3vw;
-  font-size: 1.05vw;
-  border-bottom: 0.06vw solid rgba(255, 255, 255, 0.05);
-  white-space: nowrap;
-}
-
-.runs .job {
-  font-weight: 600;
-  max-width: 22vw;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.runs .tier,
-.runs .duration,
-.runs .when {
-  color: var(--ink-dim);
-  text-align: right;
-}
-
-.runs .state {
-  font-size: 0.85vw;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  border: 0;
-  padding: 0;
-  color: var(--ink-dim);
-}
-
-.runs tr[data-state="completed"] .state {
-  color: var(--ok);
-}
-.runs tr[data-state="failed"] .state,
-.runs tr[data-state="timed_out"] .state {
-  color: var(--crit);
-}
-.runs tr[data-state="awaiting_approval"] .state {
-  color: var(--warn);
-}
-.runs tr[data-state="running"] .state {
-  color: var(--accent);
-}
-
-/* --- containers ---------------------------------------------------------- */
-
-.containers li {
-  display: flex;
-  align-items: baseline;
-  gap: 0.6vw;
-  padding: 0.3vw 0;
-  font-size: 1.15vw;
-}
-
-.dot {
-  width: 0.8vw;
-  height: 0.8vw;
-  border-radius: 50%;
-  background: var(--ink-dim);
-  flex: 0 0 auto;
-}
-
-li[data-up="true"] .dot {
-  background: var(--ok);
-}
-
-li[data-up="false"] .dot {
-  background: var(--crit);
-}
-
-li[data-up="false"] .container-name {
-  color: var(--crit);
-  font-weight: 700;
-}
-
-.container-detail {
-  margin-left: auto;
-  font-size: 0.85vw;
-  color: var(--ink-dim);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 60%;
-}
-
-/* --- system strip -------------------------------------------------------- */
-
-.system {
+.sysgrid {
   display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: 1fr;
-  gap: 0.8vw;
-  margin: 0;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 20px;
 }
 
-.system .metric {
+.sysrow {
   display: flex;
-  flex-direction: column;
-  gap: 0.1vw;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
 }
 
-.system dt {
-  font-size: 0.72vw;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--ink-dim);
+.sys-key {
+  font-size: 14px;
+  color: var(--ink-55);
 }
 
-.system dd {
-  margin: 0;
-  font-size: 1.5vw;
-  font-weight: 700;
+.sys-val {
+  font-size: 14px;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
-.system dd[data-level="warn"] {
-  color: var(--warn);
+.sys-val[data-level="ok"] {
+  color: var(--green-text);
 }
-
-.system dd[data-level="crit"] {
-  color: var(--crit);
+.sys-val[data-level="warn"] {
+  color: var(--amber-text);
+}
+.sys-val[data-level="crit"] {
+  color: var(--red-text);
 }

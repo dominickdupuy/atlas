@@ -65,6 +65,27 @@ class CronScheduler:
         upcoming = [(job, self._next_after(job, now)) for job in self._catalog.enabled_jobs]
         return sorted(upcoming, key=lambda pair: pair[1])
 
+    def occurrences_between(
+        self, start: datetime, end: datetime, per_job_limit: int = 128
+    ) -> list[tuple[JobDefinition, datetime]]:
+        """Every scheduled fire in [start, end), for the board's timeline.
+
+        next_fires() answers "what is next" — one entry per job. A timeline
+        needs the whole window, including a */30 job's thirty-odd daily
+        firings, which the board then groups into a single recurring band
+        rather than drawing thirty unreadable slivers.
+        """
+        found: list[tuple[JobDefinition, datetime]] = []
+        for job in self._catalog.enabled_jobs:
+            cursor = croniter(job.schedule, start.astimezone(self._tz))
+            for _ in range(per_job_limit):
+                fire_local: datetime = cursor.get_next(datetime)
+                fire = fire_local.astimezone(start.tzinfo)
+                if fire >= end:
+                    break
+                found.append((job, fire))
+        return sorted(found, key=lambda pair: pair[1])
+
     def _next_after(self, job: JobDefinition, after: datetime) -> datetime:
         local = after.astimezone(self._tz)
         fire_local: datetime = croniter(job.schedule, local).get_next(datetime)

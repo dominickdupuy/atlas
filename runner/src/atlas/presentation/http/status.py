@@ -16,7 +16,11 @@ more, and per D11 nothing may require scrolling to reach.
 
 from __future__ import annotations
 
-from datetime import datetime
+import logging
+from collections import defaultdict
+from datetime import datetime, timedelta
+from itertools import pairwise
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict
 
@@ -24,7 +28,7 @@ from atlas.approvals.domain.approval import Approval
 from atlas.bootstrap.container import Application
 from atlas.budget.domain.ledger import UsdMicros, format_usd
 from atlas.budget.domain.policy import BudgetLevel
-from atlas.jobs.domain.definition import ExecutionMode
+from atlas.jobs.domain.definition import ExecutionMode, JobDefinition
 from atlas.jobs.domain.run import JobRun, RunState
 from atlas.telemetry.infrastructure.service_probes import ServiceStatus, probe_all
 from atlas.telemetry.infrastructure.system_metrics import SystemMetrics
@@ -37,6 +41,23 @@ RUN_SCAN_DEPTH = 40
 a failure that has scrolled past the visible list is still worth alerting on."""
 
 FAILED_STATES = (RunState.FAILED, RunState.TIMED_OUT)
+
+logger = logging.getLogger(__name__)
+
+TIMELINE_START_HOUR = 6
+TIMELINE_END_HOUR = 22
+"""The board's visible band. Wider than the design's 7am-9pm because the
+shipped jobs actually run 06:00-22:00, and a timeline that clips real work
+to match an artboard is a lying timeline."""
+
+TIMELINE_DAYS = 3
+MAX_TIMELINE_ENTRIES = 60
+RECURRING_THRESHOLD = 3
+"""Above this many firings of one job in one day, the board draws a single
+band with a cadence label. `*/30 6-22` is 34 firings — thirty-four unreadable
+slivers say less than one bar reading "every 30m - 34 runs"."""
+
+WEATHER_CACHE_SECONDS = 600.0
 
 
 class _Frozen(BaseModel):
@@ -118,6 +139,47 @@ class SystemInfo(_Frozen):
     wifi: WifiInfo | None
 
 
+class TimelineDay(_Frozen):
+    day_offset: int
+    label: str
+    is_today: bool
+    entry_count: int
+
+
+class TimelineEntry(_Frozen):
+    kind: str
+    """job_run | job_scheduled | calendar_event"""
+
+    label: str
+    detail: str | None
+    day_offset: int
+    start_minutes: int
+    """Minutes from local midnight; the board maps this onto the hour band."""
+
+    end_minutes: int | None
+    category: str
+    status: str | None = None
+    count: int = 1
+
+
+class CalendarInfo(_Frozen):
+    """The design's calendar panel needs an MCP server that phase 5 has not
+    stood up. Reporting that plainly beats drawing plausible meetings."""
+
+    configured: bool
+    detail: str
+
+
+class WeatherInfo(_Frozen):
+    available: bool
+    detail: str | None = None
+    summary: str | None = None
+    temperature_c: float | None = None
+    high_c: float | None = None
+    low_c: float | None = None
+    precipitation_chance_pct: int | None = None
+
+
 class BudgetInfo(_Frozen):
     level: str
     spent: str
@@ -137,6 +199,12 @@ class StatusSnapshot(_Frozen):
     containers: list[ContainerItem]
     system: SystemInfo
     budget: BudgetInfo
+    timeline_start_hour: int
+    timeline_end_hour: int
+    timeline_days: list[TimelineDay]
+    timeline: list[TimelineEntry]
+    calendar: CalendarInfo
+    weather: WeatherInfo
 
 
 def _duration_seconds(run: JobRun) -> float | None:
@@ -268,6 +336,164 @@ def build_alerts(
     return alerts
 
 
+def _minutes(moment: datetime) -> int:
+    return moment.hour * 60 + moment.minute
+
+
+def _cadence_label(fires: list[datetime]) -> str:
+    gaps = sorted(
+        int((later - earlier).total_seconds() // 60) for earlier, later in pairwise(fires)
+    )
+    if not gaps:
+        return ""
+    median = gaps[len(gaps) // 2]
+    if median >= 60 and median % 60 == 0:
+        return f"every {median // 60}h"
+    return f"every {median}m"
+
+
+def _run_entry(run: JobRun, tz: ZoneInfo, today: datetime) -> TimelineEntry | None:
+    started = run.started_at.astimezone(tz)
+    day_offset = (started.date() - today.date()).days
+    if not 0 <= day_offset < TIMELINE_DAYS:
+        return None
+    finished = run.finished_at.astimezone(tz) if run.finished_at else None
+    detail = str(run.state).replace("_", " ")
+    if finished:
+        seconds = (finished - started).total_seconds()
+        detail = f"{detail} · {seconds:.1f}s" if seconds < 60 else f"{detail} · {seconds / 60:.0f}m"
+    return TimelineEntry(
+        kind="job_run",
+        label=str(run.job_id),
+        detail=detail,
+        day_offset=day_offset,
+        start_minutes=_minutes(started),
+        end_minutes=_minutes(finished) if finished else None,
+        category="atlas",
+        status=str(run.state),
+    )
+
+
+def _run_entries(runs: list[JobRun], tz: ZoneInfo, today: datetime) -> list[TimelineEntry]:
+    """Collapse repetitive SUCCESS, never repetitive failure.
+
+    A */30 job produces thirty-odd identical green bars a day, which drowns
+    the one red one — the exact opposite of what the board is for (D11). So
+    completed runs of the same job collapse into a single band with a count,
+    and anything that failed, timed out or is awaiting approval always keeps
+    its own block.
+    """
+    entries: list[TimelineEntry] = []
+    completed: dict[tuple[str, int], list[JobRun]] = defaultdict(list)
+
+    for run in runs:
+        started = run.started_at.astimezone(tz)
+        day_offset = (started.date() - today.date()).days
+        if not 0 <= day_offset < TIMELINE_DAYS:
+            continue
+        if run.state is RunState.COMPLETED:
+            completed[(str(run.job_id), day_offset)].append(run)
+            continue
+        entry = _run_entry(run, tz, today)
+        if entry:
+            entries.append(entry)
+
+    for (job_id, day_offset), group in completed.items():
+        if len(group) <= RECURRING_THRESHOLD:
+            entries.extend(e for e in (_run_entry(run, tz, today) for run in group) if e)
+            continue
+        group.sort(key=lambda run: run.started_at)
+        first = group[0].started_at.astimezone(tz)
+        last = group[-1].started_at.astimezone(tz)
+        entries.append(
+            TimelineEntry(
+                kind="job_run",
+                label=job_id,
+                detail=f"{len(group)} runs · all completed",
+                day_offset=day_offset,
+                start_minutes=_minutes(first),
+                end_minutes=_minutes(last),
+                category="atlas",
+                status="completed",
+                count=len(group),
+            )
+        )
+    return entries
+
+
+def _scheduled_entries(
+    fires: list[tuple[JobDefinition, datetime]], tz: ZoneInfo, today: datetime
+) -> list[TimelineEntry]:
+    """Group each job's firings per day, collapsing frequent ones into a band."""
+    grouped: dict[tuple[str, int], list[datetime]] = defaultdict(list)
+    definitions: dict[str, JobDefinition] = {}
+    for definition, fire in fires:
+        local = fire.astimezone(tz)
+        day_offset = (local.date() - today.date()).days
+        if not 0 <= day_offset < TIMELINE_DAYS:
+            continue
+        grouped[(str(definition.id), day_offset)].append(local)
+        definitions[str(definition.id)] = definition
+
+    entries: list[TimelineEntry] = []
+    for (job_id, day_offset), moments in grouped.items():
+        moments.sort()
+        definition = definitions[job_id]
+        tier_mode = f"tier {int(definition.tier)} · {definition.mode}"
+        if len(moments) > RECURRING_THRESHOLD:
+            entries.append(
+                TimelineEntry(
+                    kind="job_scheduled",
+                    label=job_id,
+                    detail=f"{_cadence_label(moments)} · {len(moments)} runs · {tier_mode}",
+                    day_offset=day_offset,
+                    start_minutes=_minutes(moments[0]),
+                    end_minutes=_minutes(moments[-1]),
+                    category="atlas",
+                    count=len(moments),
+                )
+            )
+            continue
+        for moment in moments:
+            entries.append(
+                TimelineEntry(
+                    kind="job_scheduled",
+                    label=job_id,
+                    detail=f"{moment.strftime('%H:%M')} · {tier_mode}",
+                    day_offset=day_offset,
+                    start_minutes=_minutes(moment),
+                    end_minutes=None,
+                    category="atlas",
+                )
+            )
+    return entries
+
+
+def build_timeline(
+    now_local: datetime,
+    runs: list[JobRun],
+    fires: list[tuple[JobDefinition, datetime]],
+    tz: ZoneInfo,
+) -> tuple[list[TimelineDay], list[TimelineEntry]]:
+    entries = _run_entries(runs, tz, now_local)
+    entries.extend(_scheduled_entries(fires, tz, now_local))
+    entries.sort(key=lambda item: (item.day_offset, item.start_minutes))
+    entries = entries[:MAX_TIMELINE_ENTRIES]
+
+    days: list[TimelineDay] = []
+    for offset in range(TIMELINE_DAYS):
+        day = now_local + timedelta(days=offset)
+        days.append(
+            TimelineDay(
+                day_offset=offset,
+                label=f"{day.strftime('%a')} {day.day}",
+                is_today=offset == 0,
+                entry_count=sum(1 for entry in entries if entry.day_offset == offset),
+            )
+        )
+    return days, entries
+
+
 def mode_summary(application: Application) -> ModeSummary:
     counts = dict.fromkeys((str(mode) for mode in ExecutionMode), 0)
     write_capable: list[str] = []
@@ -281,6 +507,44 @@ def mode_summary(application: Application) -> ModeSummary:
 class StatusAssembler:
     def __init__(self, application: Application) -> None:
         self._app = application
+        self._tz = ZoneInfo(application.settings.tz)
+        self._weather_cache: tuple[datetime, WeatherInfo] | None = None
+
+    def _calendar(self) -> CalendarInfo:
+        url = self._app.settings.mcp_gcal_url
+        if not url:
+            return CalendarInfo(
+                configured=False,
+                detail="google-calendar MCP server not configured (spec §10, phase 5)",
+            )
+        return CalendarInfo(configured=True, detail=url)
+
+    async def _weather(self, now: datetime) -> WeatherInfo:
+        settings = self._app.settings
+        if settings.profile != "prod":
+            # StubWeather returns a canned 21C. Reporting that as the weather
+            # on a wall display is worse than reporting nothing.
+            return WeatherInfo(available=False, detail="stub connector active (ATLAS_PROFILE=dev)")
+        cached = self._weather_cache
+        if cached and (now - cached[0]).total_seconds() < WEATHER_CACHE_SECONDS:
+            return cached[1]
+        try:
+            forecast = await self._app.weather.get_forecast(
+                settings.weather_lat, settings.weather_lon
+            )
+        except Exception as exc:
+            logger.warning("weather unavailable: %s", exc)
+            return WeatherInfo(available=False, detail=f"unavailable: {exc}")
+        info = WeatherInfo(
+            available=True,
+            summary=forecast.summary,
+            temperature_c=forecast.temperature_c,
+            high_c=forecast.high_c,
+            low_c=forecast.low_c,
+            precipitation_chance_pct=forecast.precipitation_chance_pct,
+        )
+        self._weather_cache = (now, info)
+        return info
 
     async def snapshot(self) -> StatusSnapshot:
         app = self._app
@@ -291,6 +555,11 @@ class StatusAssembler:
         budget_status = await app.budget.current_status()
         containers = await probe_all(app.probes)
         metrics = app.metrics.read()
+
+        now_local = now.astimezone(self._tz)
+        fires = app.scheduler.occurrences_between(now, now + timedelta(days=TIMELINE_DAYS))
+        timeline_days, timeline = build_timeline(now_local, recent, fires, self._tz)
+        weather = await self._weather(now)
 
         alerts = build_alerts(
             recent,
@@ -327,4 +596,10 @@ class StatusAssembler:
                 ceiling=format_usd(ceiling),
                 used_percent=100.0 * spent / ceiling if ceiling else 0.0,
             ),
+            timeline_start_hour=TIMELINE_START_HOUR,
+            timeline_end_hour=TIMELINE_END_HOUR,
+            timeline_days=timeline_days,
+            timeline=timeline,
+            calendar=self._calendar(),
+            weather=weather,
         )

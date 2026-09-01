@@ -4,76 +4,130 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>atlas ops board</title>
-    <link rel="stylesheet" href="/static/board.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@200;300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/board.css?v={{ asset_version }}" />
   </head>
   <body>
     <!--
-      The passive operations board (D11). Output only: this markup contains
-      no button, link, or form, because the monitor it renders on has no
-      input device. Approvals happen on the phone (D8); the queue is shown
-      here for visibility and nothing more.
-    -->
-    <header class="bar">
-      <div class="identity">
-        <span class="wordmark">atlas</span>
-        <span class="rev" id="revision">—</span>
-      </div>
-      <div class="state" id="display-mode">STARTING</div>
-      <div class="clock">
-        <span class="clock-label">updated</span>
-        <span class="clock-value" id="last-updated">never</span>
-      </div>
-    </header>
+      The passive operations board (D11), implementing the "Atlas Board"
+      design canvas. Output only: no button, form, input or link appears
+      anywhere below, because the monitor has no input device. Approvals
+      happen on the phone (D8); the queue is shown here for visibility only.
 
-    <div class="staleness" id="staleness" hidden>
-      <span class="staleness-title" id="staleness-title">STALE DATA</span>
-      <span class="staleness-detail" id="staleness-detail"></span>
+      The board is a fixed 1920x1080 canvas scaled to the viewport, exactly
+      as the design's fit() does, so it renders identically on any panel.
+    -->
+    <div class="wrap" id="wrap">
+      <div class="board" id="board">
+        <div class="glow glow-a"></div>
+        <div class="glow glow-b"></div>
+
+        <header class="head">
+          <div class="brand">
+            <div class="mark">
+              <svg viewBox="0 0 32 32" fill="none" stroke="#eaf2ff" stroke-width="1.6"
+                   stroke-linecap="round" aria-hidden="true">
+                <circle cx="16" cy="16" r="11.2" stroke-opacity="0.95"></circle>
+                <ellipse cx="16" cy="16" rx="4.9" ry="11.2" stroke-opacity="0.6"></ellipse>
+                <path d="M5.4 12.3h21.2M5.4 19.7h21.2" stroke-opacity="0.6"></path>
+                <path d="M16 4.8v22.4" stroke-opacity="0.28"></path>
+              </svg>
+            </div>
+            <div class="wordmark">atlas</div>
+            <div class="build" id="build">—</div>
+          </div>
+
+          <div class="head-right">
+            <div class="pill" id="mode-pill">
+              <span class="pill-dot"></span>
+              <span class="pill-text" id="mode-text">STARTING</span>
+            </div>
+            <div class="clockwrap">
+              <div class="clockline">
+                <span class="clock" id="clock">--:--</span>
+                <span class="meridiem" id="meridiem"></span>
+              </div>
+              <div class="datestr" id="datestr">&nbsp;</div>
+            </div>
+          </div>
+        </header>
+
+        <!-- Shown only when something needs a human. A healthy board is
+             exactly the design; this band is the exception, not the frame. -->
+        <section class="attention" id="attention" hidden>
+          <div class="attention-head">
+            <span class="attention-title" id="attention-title">ATTENTION</span>
+            <span class="attention-more" id="attention-more"></span>
+          </div>
+          <ul class="attention-list" id="attention-list"></ul>
+        </section>
+
+        <!-- The staleness banner. The single most important element here:
+             a board that has stopped updating must never look like one that
+             has not. -->
+        <section class="stale" id="stale" hidden>
+          <span class="stale-title" id="stale-title">STALE DATA</span>
+          <span class="stale-detail" id="stale-detail"></span>
+        </section>
+
+        <div class="main" id="main">
+          <section class="panel panel-timeline">
+            <div class="panel-head">
+              <span class="panel-title" id="timeline-title">SCHEDULE</span>
+              <span class="panel-source" id="timeline-source">—</span>
+            </div>
+
+            <div class="daybar" id="daybar"></div>
+
+            <div class="grid">
+              <div class="gutter" id="gutter"></div>
+              <div class="cols" id="cols"></div>
+            </div>
+
+            <div class="legend">
+              <span class="key"><i data-cat="atlas"></i>atlas job</span>
+              <span class="key"><i data-cat="ok"></i>completed</span>
+              <span class="key"><i data-cat="pending"></i>awaiting approval</span>
+              <span class="key"><i data-cat="fail"></i>failed</span>
+              <span class="key"><i data-cat="work"></i>calendar</span>
+              <span class="legend-note" id="legend-note"></span>
+            </div>
+          </section>
+
+          <aside class="rail">
+            <div class="panel panel-weather" id="weather-card">
+              <div class="panel-head">
+                <span class="panel-title">WEATHER</span>
+                <span class="panel-source" id="weather-place">—</span>
+              </div>
+              <div class="weather-body" id="weather-body"></div>
+            </div>
+
+            <div class="panel panel-runs">
+              <div class="panel-head">
+                <span class="panel-title">RUNS</span>
+                <span class="panel-source" id="runs-source">—</span>
+              </div>
+              <div class="runs" id="runs"></div>
+            </div>
+
+            <div class="panel panel-system">
+              <div class="panel-head">
+                <span class="panel-title">SYSTEM</span>
+                <span class="panel-source" id="system-source">—</span>
+              </div>
+              <div class="sysgrid" id="sysgrid"></div>
+            </div>
+          </aside>
+        </div>
+      </div>
     </div>
 
-    <main class="grid">
-      <section class="panel panel-alerts" id="panel-alerts">
-        <h2>Attention</h2>
-        <ul class="alerts" id="alerts"></ul>
-        <p class="empty" id="alerts-empty">nothing needs attention</p>
-        <p class="more" id="alerts-more" hidden></p>
-      </section>
-
-      <section class="panel panel-approvals">
-        <h2>Pending approvals <span class="count" id="approvals-count">0</span></h2>
-        <ul class="approvals" id="approvals"></ul>
-        <p class="empty" id="approvals-empty">queue empty</p>
-        <p class="more" id="approvals-more" hidden></p>
-        <p class="hint">approve on phone</p>
-      </section>
-
-      <section class="panel panel-mode">
-        <h2>Authority</h2>
-        <div class="mode-block" id="mode-block">
-          <div class="mode-headline" id="mode-headline">—</div>
-          <div class="mode-detail" id="mode-detail"></div>
-        </div>
-        <div class="service-line" id="service-line">—</div>
-      </section>
-
-      <section class="panel panel-runs">
-        <h2>Recent runs</h2>
-        <table class="runs">
-          <tbody id="runs"></tbody>
-        </table>
-        <p class="empty" id="runs-empty">no runs recorded</p>
-      </section>
-
-      <section class="panel panel-containers">
-        <h2>Services</h2>
-        <ul class="containers" id="containers"></ul>
-      </section>
-
-      <section class="panel panel-system">
-        <h2>Host</h2>
-        <dl class="system" id="system"></dl>
-      </section>
-    </main>
-
-    <script src="/static/board.js"></script>
+    <script src="/static/board.js?v={{ asset_version }}"></script>
   </body>
 </html>

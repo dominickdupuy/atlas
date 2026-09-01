@@ -87,8 +87,17 @@ class PanelRenderer:
         return self._env.get_template("dashboard.html").render(panels=rendered)
 
     def render_board(self) -> str:
-        """The passive ops board (D11). A static shell: it carries no
-        server-rendered state at all, because everything it draws arrives
-        from one /api/status poll. That is what lets it keep the last good
-        screen up, and label it as stale, when the API stops answering."""
-        return self._env.get_template("board.html").render()
+        """The passive ops board (D11). A near-static shell: it carries no
+        server-rendered state, because everything it draws arrives from one
+        /api/status poll. That is what lets it keep the last good screen up,
+        and label it as stale, when the API stops answering.
+
+        The one thing rendered in is the asset version. StaticFiles sends
+        ETag and Last-Modified but no Cache-Control, so a browser may reuse a
+        cached stylesheet heuristically without revalidating — which after a
+        deploy pairs new markup with old CSS. On a kiosk nobody reloads by
+        hand, that is permanent until someone notices the screen is wrong.
+        """
+        return self._env.get_template("board.html").render(
+            asset_version=f"{self._app.version}-{self._app.revision}"
+        )

@@ -232,6 +232,60 @@ Confirmed from the running service at 00:35:16: `version=0.1.1 revision=792b5b9`
 
 ---
 
+## 2026-09-01 14:15 — Design canvas imported and implemented
+
+Imported the "Atlas Kiosk Display" project (`Atlas Board.dc.html` + `support.js`)
+via the claude_design MCP and rebuilt the board to match it. `support.js` is the
+canvas's React authoring runtime and is deliberately NOT shipped — D17 rules out a
+build step on the Pi — so its `DCLogic` class was translated to plain DOM.
+
+**The judgement call.** The design is calendar-centric, and its two largest panels
+have no data source on this host: calendar needs the `google-calendar` MCP server
+(phase 5, `mcp_gcal_url` empty) and weather resolves to `StubWeather`, a canned
+21C. I did not render the artboard's sample meetings and temperature. Fictional
+appointments on a wall display you glance at and trust is the one thing this board
+must never do. Instead:
+
+- The timeline renders **real** atlas data — actual runs and real cron occurrences —
+  using the design's own "atlas job" category, which the artboard already had.
+- Calendar and weather render honest unconfigured states and light up when the
+  connectors are configured. `test_weather_never_reports_stub_numbers_as_real`
+  locks that in.
+
+**What I added back that the design omits.** D11 says failures are the reason the
+screen exists, and the artboard has no alerts panel and no staleness handling. So a
+healthy board is exactly the design, and an ATTENTION band appears above the fold
+carrying alerts plus pending approvals; the header pill turns amber and counts them.
+The staleness banner survives unchanged.
+
+**Timeline density.** A `*/30` job is 34 firings a day. Thirty-four identical green
+slivers drown the one red one, so repetitive *successes* collapse into one band with
+a count while anything failed, timed out or awaiting approval always keeps its own
+block (`test_failures_are_never_collapsed_away`).
+
+**Canvas sizing.** The design is a fixed 1920x1080 scaled by `fit()`. This monitor
+reports a 1024x768 maximum and is 4:3, so the artboard letterboxed away a third of
+the screen and shrank every label to ~8px. The canvas now keeps the design's height
+(which is what fixes its type scale) and takes its width from the display aspect:
+identical to the artboard on 16:9, 1440x1080 here, filling the panel.
+
+**Three bugs found by looking at the screen rather than the process list:**
+
+1. The kiosk rendered a full-screen globe icon. StaticFiles sends ETag and
+   Last-Modified but no Cache-Control, so Chromium heuristically reused last
+   night's `board.css` against the new markup. **This would have silently broken
+   the board on every future deploy.** Asset URLs now carry the running
+   `version-revision`, and the kiosk clears its tmpfs cache on start.
+2. Recurring bands were laned against point events, squeezing an all-day band into
+   half a column.
+3. Band labels were vertically centred, so a 06:00-22:30 band printed its name at
+   2 PM — reading as an event at 2 PM.
+
+**Still open:** live calendar and weather need phase-5 connector work; the kiosk URL
+carries `?token=` and is visible in `ps` (single-user host, but real); a mouse
+cursor is visible on the panel despite `cursor: none` (compositor-drawn — worth
+`unclutter`-equivalent attention given 24/7 burn-in).
+
 ## Running log
 
 ### 23:51 — Orientation

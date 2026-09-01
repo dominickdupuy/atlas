@@ -16,7 +16,12 @@ from httpx import AsyncClient
 
 from atlas.bootstrap.container import Application
 from atlas.jobs.domain.run import JobRun, RunState
-from atlas.presentation.http.status import MAX_ALERTS, MAX_RUNS
+from atlas.presentation.http.status import (
+    MAX_ALERTS,
+    MAX_RUNS,
+    RECURRING_THRESHOLD,
+    TIMELINE_DAYS,
+)
 from atlas.shared.ids import JobId, RunId
 from atlas.telemetry.infrastructure.service_probes import TcpServiceProbe
 from tests.integration.conftest import AUTH
@@ -223,7 +228,9 @@ async def test_board_is_served_and_carries_no_input_controls(client: AsyncClient
     page = response.text
     assert "/static/board.css" in page
     assert "/static/board.js" in page
-    assert "panel-alerts" in page
+    assert "panel-timeline" in page
+    assert 'id="attention"' in page
+    assert 'id="stale"' in page
     # D11: the monitor has no input device, so the board must not offer any.
     for control in ("<button", "<form", "<input", "<a "):
         assert control not in page, f"the passive board must not contain {control}"
@@ -234,5 +241,114 @@ async def test_board_needs_no_data_to_render(client: AsyncClient) -> None:
     that cannot reach the API still shows its own stale-data warning."""
     response = await client.get("/dashboard", headers=AUTH)
 
-    assert "staleness" in response.text
+    assert 'id="stale"' in response.text
     assert "NO DATA" not in response.text, "the warning text is set by the client, not baked in"
+
+
+# --- timeline, calendar and weather ----------------------------------------
+
+
+async def _seed_run_at(
+    application: Application,
+    *,
+    run_id: str,
+    hour: int,
+    minute: int = 0,
+    state: RunState = RunState.COMPLETED,
+    job_id: str = "lights-out",
+    error: str | None = None,
+) -> None:
+    """Pinned to a mid-day hour so the run lands inside the board's band and
+    on today's column regardless of when the suite runs."""
+    started = datetime.now(UTC).replace(hour=hour, minute=minute, second=0, microsecond=0)
+    await application.run_repo.add(
+        JobRun(
+            run_id=RunId(run_id),
+            job_id=JobId(job_id),
+            tier=1,
+            mode="propose",
+            state=state,
+            started_at=started,
+            finished_at=started + timedelta(seconds=2),
+            error=error,
+        )
+    )
+
+
+async def test_timeline_covers_three_days_starting_today(client: AsyncClient) -> None:
+    body = (await client.get("/api/status", headers=AUTH)).json()
+
+    days = body["timeline_days"]
+    assert len(days) == TIMELINE_DAYS
+    assert days[0]["is_today"] is True
+    assert [day["day_offset"] for day in days] == list(range(TIMELINE_DAYS))
+    assert body["timeline_start_hour"] < body["timeline_end_hour"]
+
+
+async def test_repetitive_successes_collapse_into_one_band(
+    client: AsyncClient, application: Application
+) -> None:
+    """A */30 job is thirty green bars a day; collapsing them is what keeps
+    the one red bar visible (D11)."""
+    for index in range(RECURRING_THRESHOLD + 3):
+        await _seed_run_at(application, run_id=f"ok-{index}", hour=9, minute=index * 5)
+
+    body = (await client.get("/api/status", headers=AUTH)).json()
+
+    runs = [e for e in body["timeline"] if e["kind"] == "job_run"]
+    assert len(runs) == 1, "repetitive successes must not each get a block"
+    assert runs[0]["count"] == RECURRING_THRESHOLD + 3
+    assert "all completed" in runs[0]["detail"]
+    assert runs[0]["end_minutes"] > runs[0]["start_minutes"], "the band spans first to last"
+
+
+async def test_failures_are_never_collapsed_away(
+    client: AsyncClient, application: Application
+) -> None:
+    """The whole point of grouping is to keep this one visible."""
+    for index in range(RECURRING_THRESHOLD + 3):
+        await _seed_run_at(application, run_id=f"ok-{index}", hour=9, minute=index * 5)
+    await _seed_run_at(
+        application, run_id="bad", hour=10, state=RunState.FAILED, error="upstream 502"
+    )
+
+    body = (await client.get("/api/status", headers=AUTH)).json()
+
+    failures = [e for e in body["timeline"] if e.get("status") == "failed"]
+    assert len(failures) == 1
+    assert failures[0]["count"] == 1
+    assert failures[0]["label"] == "lights-out"
+
+
+async def test_a_handful_of_runs_stay_individual(
+    client: AsyncClient, application: Application
+) -> None:
+    for index in range(RECURRING_THRESHOLD):
+        await _seed_run_at(application, run_id=f"few-{index}", hour=9, minute=index * 5)
+
+    body = (await client.get("/api/status", headers=AUTH)).json()
+
+    runs = [e for e in body["timeline"] if e["kind"] == "job_run"]
+    assert len(runs) == RECURRING_THRESHOLD
+    assert all(entry["count"] == 1 for entry in runs)
+
+
+async def test_calendar_reports_that_it_is_not_configured(client: AsyncClient) -> None:
+    """The design's calendar panel needs a phase-5 MCP server. Saying so beats
+    drawing plausible meetings."""
+    body = (await client.get("/api/status", headers=AUTH)).json()
+
+    assert body["calendar"]["configured"] is False
+    assert "not configured" in body["calendar"]["detail"]
+
+
+async def test_weather_never_reports_stub_numbers_as_real(client: AsyncClient) -> None:
+    """StubWeather returns a canned 21C. On a wall display that is a lie, so
+    the dev profile must report unavailable rather than pass it through."""
+    body = (await client.get("/api/status", headers=AUTH)).json()
+
+    weather = body["weather"]
+    assert weather["available"] is False
+    assert weather["temperature_c"] is None
+    assert weather["summary"] is None
+    assert "stub" in (weather["detail"] or "")

@@ -23,6 +23,7 @@ from atlas.budget.domain.ledger import usd
 from atlas.budget.infrastructure.pricing import StaticPricingTable
 from atlas.budget.infrastructure.sqlite_repo import SqliteBudgetLedgerRepository
 from atlas.config import Settings
+from atlas.connectors.application.ports import WeatherPort
 from atlas.jobs.application.catalog import JobCatalog
 from atlas.jobs.application.execute_job import ExecuteJobService
 from atlas.jobs.application.scheduler import CronScheduler
@@ -62,6 +63,7 @@ class Application:
     mqtt: AiomqttEventBus
     display_mode: DisplayModeTracker
     clock: Clock
+    weather: WeatherPort
     metrics: SystemMetricsReader
     probes: tuple[TcpServiceProbe, ...]
     started_at: datetime
@@ -184,6 +186,7 @@ def build_application(settings: Settings) -> Application:
         mqtt=mqtt,
         display_mode=display_mode,
         clock=clock,
+        weather=connectors.weather,
         metrics=SystemMetricsReader(),
         probes=probes,
         started_at=clock.now(),

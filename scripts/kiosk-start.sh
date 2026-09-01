@@ -25,6 +25,10 @@ mkdir -p "$RUNTIME_DIR/cache" "$RUNTIME_DIR/profile"
 # disposable tmpfs, so clearing the locks unconditionally is safe and is the
 # difference between a kiosk that survives a crash and one that does not.
 rm -f "$RUNTIME_DIR/profile"/Singleton* 2>/dev/null || true
+# Belt and braces alongside the versioned asset URLs: this cache is
+# tmpfs and worthless across a restart, and a stale board.css paired
+# with new markup renders as garbage nobody is standing there to reload.
+rm -rf "${RUNTIME_DIR:?}/cache"/* 2>/dev/null || true
 
 log() { printf '%s kiosk: %s\n' "$(date -Is)" "$*"; }
 
