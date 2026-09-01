@@ -351,9 +351,7 @@
 
   function layout(entries, startHour, span) {
     var all = geometry(entries, startHour, span);
-    // A recurring band ("17 runs, all completed") is a range backdrop, not a
-    // competitor for space. Laning it against a 07:00 point event squeezed an
-    // all-day band into half the column for no reason.
+    // A recurring band is a range backdrop, not a competitor for space.
     var bands = all.filter(function (p) {
       return p.entry.count > 1;
     });
@@ -361,20 +359,49 @@
       return p.entry.count <= 1;
     });
 
-    var laneEnds = [];
+    /*
+     * Width is decided per CLUSTER of overlapping events, not per day.
+     * Counting lanes across the whole day meant one 1pm conflict squeezed
+     * every other event that day into half a column for no reason: a lecture
+     * alone at 9am has nothing to share with.
+     *
+     * A cluster is a run of events joined transitively by overlap — A meets
+     * B, B meets C, so all three share — which is what makes the widths line
+     * up instead of stepping mid-block.
+     */
+    var EPSILON = 0.01;
+    var clusters = [];
+    var current = [];
+    var clusterEnd = -Infinity;
+
     items.forEach(function (p) {
-      var lane = 0;
-      while (lane < laneEnds.length && laneEnds[lane] > p.top + 0.01) {
-        lane++;
+      if (current.length && p.top >= clusterEnd - EPSILON) {
+        clusters.push(current);
+        current = [];
+        clusterEnd = -Infinity;
       }
-      laneEnds[lane] = p.top + p.height;
-      p.lane = lane;
+      current.push(p);
+      clusterEnd = Math.max(clusterEnd, p.top + p.height);
     });
-    var lanes = Math.max(1, laneEnds.length);
-    items.forEach(function (p) {
-      p.lanes = lanes;
-      p.band = false;
+    if (current.length) clusters.push(current);
+
+    clusters.forEach(function (cluster) {
+      var laneEnds = [];
+      cluster.forEach(function (p) {
+        var lane = 0;
+        while (lane < laneEnds.length && laneEnds[lane] > p.top + EPSILON) {
+          lane++;
+        }
+        laneEnds[lane] = p.top + p.height;
+        p.lane = lane;
+      });
+      var lanes = Math.max(1, laneEnds.length);
+      cluster.forEach(function (p) {
+        p.lanes = lanes;
+        p.band = false;
+      });
     });
+
     bands.forEach(function (p) {
       p.lane = 0;
       p.lanes = 1;
