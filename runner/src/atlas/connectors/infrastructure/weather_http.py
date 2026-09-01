@@ -73,9 +73,13 @@ class OpenMeteoWeatherClient:
         )
 
 
-BOARD_TTL_SECONDS = 900.0
-"""15 minutes. Open-Meteo regenerates on roughly that cadence, and the board
-polls every 10s — refetching per poll would be pure waste."""
+BOARD_TTL_SECONDS = 60.0
+"""Refetch cadence, set to 60s by request.
+
+Open-Meteo updates its model output far less often than this, so most of
+these requests return an identical payload; at 1440 calls/day that is still
+well inside its free fair-use allowance. Raise it back if the allowance ever
+matters — the board reads whatever is cached and does not care."""
 
 FORECAST_DAYS = 2
 

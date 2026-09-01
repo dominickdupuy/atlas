@@ -408,6 +408,27 @@ that to grid point 29.666, -82.336, elevation 59 m, timezone
 America/New_York — i.e. actually Gainesville, not silently snapped to a
 neighbouring cell.
 
+## 2026-09-01 18:30 — Now-marker on the weather chart; 60s refetch
+
+Today's weather chart carries the same red vertical marker as the calendar's
+now-line, so the two panels read as one clock. Today only — tomorrow has no
+"now". No time label beside it: the header clock already says the time, and
+repeating it adds ink to the chart it exists to clarify.
+
+**Refetch cadence changed from 15 minutes to 60 seconds by request**, for both
+the calendar and the weather.
+
+Worth recording what that does and does not buy on the calendar side: Exchange
+regenerates a published feed on its own schedule and returns **no cache
+headers at all** (checked — only a `date`), so an edit in Outlook still will
+not appear until Microsoft republishes. The 60s TTL shortens only the second
+half of that delay: our copy is now at most a minute behind Microsoft's rather
+than at most fifteen. It does not make Outlook edits appear within a minute.
+
+Weather at 60s is ~1440 calls/day, well inside Open-Meteo's free fair-use
+allowance. Open-Meteo updates model output far less often than that, so most
+of those requests return an identical payload.
+
 ## Running log
 
 ### 23:51 — Orientation

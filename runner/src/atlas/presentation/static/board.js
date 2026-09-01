@@ -463,7 +463,7 @@
    * that off two separate charts means doing the alignment in your head from
    * across a room.
    */
-  function conditionsChart(hourly) {
+  function conditionsChart(hourly, isToday) {
     var wrap = el("div");
     var visible = hourly.filter(function (h) {
       return h.hour >= 6 && h.hour <= 22;
@@ -517,6 +517,14 @@
       svgEl("polyline", { points: points, class: "wx-uv-line", "vector-effect": "non-scaling-stroke" })
     );
     plot.appendChild(svg);
+
+    if (isToday) {
+      // Same red as the calendar's now-line, for the same reason: without a
+      // reference for "now", a 17-hour curve is hard to read against the
+      // moment you are standing in.
+      var marker = nowMarker(visible);
+      if (marker) plot.appendChild(marker);
+    }
     chart.appendChild(plot);
 
     var right = el("div", "wx-ax wx-ax-right");
@@ -533,6 +541,48 @@
 
     wrap.appendChild(chart);
     return wrap;
+  }
+
+  /*
+   * Horizontal position of "now" inside the chart's hour range. The plot
+   * spans from the first visible hour to the end of the last, since each bar
+   * covers a whole hour slot.
+   */
+  function nowFraction(visible) {
+    if (!visible.length) return null;
+    var first = visible[0].hour;
+    var last = visible[visible.length - 1].hour + 1;
+    var now = new Date();
+    var hours = now.getHours() + now.getMinutes() / 60;
+    var fraction = ((hours - first) / (last - first)) * 100;
+    return fraction < 0 || fraction > 100 ? null : fraction;
+  }
+
+  function nowMarker(visible) {
+    var fraction = nowFraction(visible);
+    if (fraction === null) return null;
+
+    // Line only: the header clock already gives the time, and repeating it
+    // here just adds ink to the chart it is meant to clarify.
+    var line = el("div", "wx-now-line");
+    line.id = "wx-nowline";
+    line.style.left = fraction + "%";
+    return line;
+  }
+
+  function moveWeatherNow(s) {
+    var line = $("wx-nowline");
+    if (!line || !s || !s.weather || !s.weather.days || !s.weather.days.length) return;
+    var visible = (s.weather.days[0].hourly || []).filter(function (h) {
+      return h.hour >= 6 && h.hour <= 22;
+    });
+    var fraction = nowFraction(visible);
+    if (fraction === null) {
+      line.hidden = true;
+      return;
+    }
+    line.hidden = false;
+    line.style.left = fraction + "%";
   }
 
   function weatherDay(day) {
@@ -564,7 +614,7 @@
     box.appendChild(metrics);
 
     if (day.hourly && day.hourly.length) {
-      box.appendChild(conditionsChart(day.hourly));
+      box.appendChild(conditionsChart(day.hourly, day.label === "Today"));
     }
     return box;
   }
@@ -815,6 +865,7 @@
   setInterval(function () {
     renderClock();
     moveNowLine(lastSnapshot);
+    moveWeatherNow(lastSnapshot);
     // Independent of the poll: the age must keep climbing while requests fail.
     refreshStaleness();
   }, 1000);

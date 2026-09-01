@@ -41,9 +41,14 @@ from atlas.shared.clock import Clock, SystemClock
 logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT_SECONDS = 20.0
-DEFAULT_TTL_SECONDS = 900.0
-"""Exchange regenerates a published feed on its own schedule — minutes to
-hours — so polling it faster than this buys nothing but traffic."""
+DEFAULT_TTL_SECONDS = 60.0
+"""Refetch cadence, set to 60s by request.
+
+Worth knowing what this does and does not buy: Exchange regenerates a
+published feed on its own schedule and returns no cache headers at all, so an
+edit in Outlook still will not appear until Microsoft republishes. This
+shortens only the second half of that delay — our copy is at most a minute
+behind Microsoft's, rather than at most fifteen."""
 
 MAX_EVENTS = 200
 
