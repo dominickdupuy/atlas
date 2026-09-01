@@ -59,6 +59,50 @@ class WeatherPort(Protocol):
     async def get_forecast(self, latitude: float, longitude: float) -> Forecast: ...
 
 
+class HourlyPrecipitation(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    time: datetime
+    probability_pct: int
+    millimetres: float
+
+
+class DayForecast(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    date: str
+    summary: str
+    high_c: float
+    low_c: float
+    uv_index_max: float | None = None
+    precipitation_probability_pct: int = 0
+    precipitation_mm: float = 0.0
+    hourly: tuple[HourlyPrecipitation, ...] = ()
+
+    @property
+    def is_wet(self) -> bool:
+        """Worth drawing the hourly profile for. Either the sky is likely to
+        open at some point, or enough is forecast to matter to a walk across
+        campus."""
+        return self.precipitation_probability_pct >= 30 or self.precipitation_mm >= 0.2
+
+
+class WeatherReport(BaseModel):
+    """Today and tomorrow, plus the health of the fetch behind them."""
+
+    model_config = ConfigDict(frozen=True)
+
+    days: tuple[DayForecast, ...] = ()
+    current_c: float | None = None
+    current_summary: str | None = None
+    fetched_at: datetime | None = None
+    error: str | None = None
+
+
+class WeatherReportPort(Protocol):
+    async def get_report(self, latitude: float, longitude: float) -> WeatherReport: ...
+
+
 class CalendarEvent(BaseModel):
     model_config = ConfigDict(frozen=True)
 

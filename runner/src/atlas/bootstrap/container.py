@@ -23,8 +23,9 @@ from atlas.budget.domain.ledger import usd
 from atlas.budget.infrastructure.pricing import StaticPricingTable
 from atlas.budget.infrastructure.sqlite_repo import SqliteBudgetLedgerRepository
 from atlas.config import Settings
-from atlas.connectors.application.ports import CalendarPort, WeatherPort
+from atlas.connectors.application.ports import CalendarPort, WeatherPort, WeatherReportPort
 from atlas.connectors.infrastructure.ics_calendar import IcsCalendarClient
+from atlas.connectors.infrastructure.weather_http import OpenMeteoForecastClient
 from atlas.jobs.application.catalog import JobCatalog
 from atlas.jobs.application.execute_job import ExecuteJobService
 from atlas.jobs.application.scheduler import CronScheduler
@@ -65,6 +66,7 @@ class Application:
     display_mode: DisplayModeTracker
     clock: Clock
     weather: WeatherPort
+    weather_report: WeatherReportPort
     calendar: CalendarPort | None
     metrics: SystemMetricsReader
     probes: tuple[TcpServiceProbe, ...]
@@ -197,6 +199,9 @@ def build_application(settings: Settings) -> Application:
         display_mode=display_mode,
         clock=clock,
         weather=connectors.weather,
+        # Not profile-gated: Open-Meteo needs no key, so the board shows real
+        # weather in dev exactly as in prod (same reasoning as the calendar).
+        weather_report=OpenMeteoForecastClient(clock=clock),
         calendar=calendar,
         metrics=SystemMetricsReader(),
         probes=probes,

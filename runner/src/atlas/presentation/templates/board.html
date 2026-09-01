@@ -89,12 +89,10 @@
               <div class="cols" id="cols"></div>
             </div>
 
+<!-- Job runs no longer appear here; the calendar shows the calendar. -->
             <div class="legend">
-              <span class="key"><i data-cat="atlas"></i>atlas job</span>
-              <span class="key"><i data-cat="ok"></i>completed</span>
-              <span class="key"><i data-cat="pending"></i>awaiting approval</span>
-              <span class="key"><i data-cat="fail"></i>failed</span>
-              <span class="key"><i data-cat="work"></i>calendar</span>
+              <span class="key"><i data-cat="work"></i>busy</span>
+              <span class="key"><i data-cat="free"></i>free / tentative</span>
               <span class="legend-note" id="legend-note"></span>
             </div>
           </section>
@@ -114,6 +112,7 @@
                 <span class="panel-source" id="runs-source">—</span>
               </div>
               <div class="runs" id="runs"></div>
+              <p class="runs-note" id="runs-note" hidden></p>
             </div>
 
             <div class="panel panel-system">

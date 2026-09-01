@@ -19,7 +19,6 @@ from atlas.jobs.domain.run import JobRun, RunState
 from atlas.presentation.http.status import (
     MAX_ALERTS,
     MAX_RUNS,
-    RECURRING_THRESHOLD,
     TIMELINE_DAYS,
 )
 from atlas.shared.ids import JobId, RunId
@@ -140,8 +139,6 @@ async def test_a_completed_run_does_not_alert(
     body = (await client.get("/api/status", headers=AUTH)).json()
 
     assert body["alerts"] == []
-    assert body["runs"][0]["state"] == "completed"
-    assert body["runs"][0]["duration_seconds"] == pytest.approx(3.0, abs=0.5)
 
 
 async def test_a_down_container_is_a_critical_alert(
@@ -186,15 +183,30 @@ async def test_alerts_truncate_with_an_honest_total(
     assert body["alerts_total"] == MAX_ALERTS + 4
 
 
-async def test_runs_are_capped_for_the_screen(
+async def test_stub_profile_runs_are_not_reported_as_activity(
     client: AsyncClient, application: Application
 ) -> None:
+    """In the dev profile every connector is a stub, so a completed run means
+    a job talked to canned data and published nothing. Listing those overstates
+    what the system is doing."""
     for index in range(MAX_RUNS + 3):
         await _seed_run(application, run_id=f"run-cap-{index}", state=RunState.COMPLETED)
 
     body = (await client.get("/api/status", headers=AUTH)).json()
 
-    assert len(body["runs"]) == MAX_RUNS
+    assert body["runs"] == []
+    assert body["runs_note"] is not None and "stub" in body["runs_note"]
+
+
+async def test_failures_still_alert_even_in_the_stub_profile(
+    client: AsyncClient, application: Application
+) -> None:
+    """Hiding stub successes must not hide a real crash."""
+    await _seed_run(application, run_id="boom", state=RunState.FAILED, error="tool exploded")
+
+    body = (await client.get("/api/status", headers=AUTH)).json()
+
+    assert any(alert["kind"] == "job_failed" for alert in body["alerts"])
 
 
 async def test_authority_reports_no_unattended_writes_for_the_fixture_job(
@@ -285,54 +297,6 @@ async def test_timeline_covers_three_days_starting_today(client: AsyncClient) ->
     assert body["timeline_start_hour"] < body["timeline_end_hour"]
 
 
-async def test_repetitive_successes_collapse_into_one_band(
-    client: AsyncClient, application: Application
-) -> None:
-    """A */30 job is thirty green bars a day; collapsing them is what keeps
-    the one red bar visible (D11)."""
-    for index in range(RECURRING_THRESHOLD + 3):
-        await _seed_run_at(application, run_id=f"ok-{index}", hour=9, minute=index * 5)
-
-    body = (await client.get("/api/status", headers=AUTH)).json()
-
-    runs = [e for e in body["timeline"] if e["kind"] == "job_run"]
-    assert len(runs) == 1, "repetitive successes must not each get a block"
-    assert runs[0]["count"] == RECURRING_THRESHOLD + 3
-    assert "all completed" in runs[0]["detail"]
-    assert runs[0]["end_minutes"] > runs[0]["start_minutes"], "the band spans first to last"
-
-
-async def test_failures_are_never_collapsed_away(
-    client: AsyncClient, application: Application
-) -> None:
-    """The whole point of grouping is to keep this one visible."""
-    for index in range(RECURRING_THRESHOLD + 3):
-        await _seed_run_at(application, run_id=f"ok-{index}", hour=9, minute=index * 5)
-    await _seed_run_at(
-        application, run_id="bad", hour=10, state=RunState.FAILED, error="upstream 502"
-    )
-
-    body = (await client.get("/api/status", headers=AUTH)).json()
-
-    failures = [e for e in body["timeline"] if e.get("status") == "failed"]
-    assert len(failures) == 1
-    assert failures[0]["count"] == 1
-    assert failures[0]["label"] == "lights-out"
-
-
-async def test_a_handful_of_runs_stay_individual(
-    client: AsyncClient, application: Application
-) -> None:
-    for index in range(RECURRING_THRESHOLD):
-        await _seed_run_at(application, run_id=f"few-{index}", hour=9, minute=index * 5)
-
-    body = (await client.get("/api/status", headers=AUTH)).json()
-
-    runs = [e for e in body["timeline"] if e["kind"] == "job_run"]
-    assert len(runs) == RECURRING_THRESHOLD
-    assert all(entry["count"] == 1 for entry in runs)
-
-
 async def test_calendar_reports_that_it_is_not_configured(client: AsyncClient) -> None:
     """With no feed URL set, the board says so rather than drawing plausible
     meetings."""
@@ -346,13 +310,41 @@ async def test_calendar_reports_that_it_is_not_configured(client: AsyncClient) -
     assert not [e for e in body["timeline"] if e["kind"] == "calendar_event"]
 
 
-async def test_weather_never_reports_stub_numbers_as_real(client: AsyncClient) -> None:
-    """StubWeather returns a canned 21C. On a wall display that is a lie, so
-    the dev profile must report unavailable rather than pass it through."""
+async def test_weather_reports_two_days_with_uv_and_precipitation(
+    client: AsyncClient,
+) -> None:
     body = (await client.get("/api/status", headers=AUTH)).json()
 
     weather = body["weather"]
-    assert weather["available"] is False
-    assert weather["temperature_c"] is None
-    assert weather["summary"] is None
-    assert "stub" in (weather["detail"] or "")
+    assert weather["available"] is True
+    assert [day["label"] for day in weather["days"]] == ["Today", "Tomorrow"]
+    today = weather["days"][0]
+    assert today["uv_index_max"] == pytest.approx(6.9)
+    assert today["precipitation_probability_pct"] == 40
+    assert today["is_wet"] is True
+
+
+async def test_hourly_precipitation_only_ships_for_a_wet_day(client: AsyncClient) -> None:
+    """The profile is worth its payload, and its space on the card, only when
+    it is actually going to rain."""
+    body = (await client.get("/api/status", headers=AUTH)).json()
+
+    today, tomorrow = body["weather"]["days"]
+    assert len(today["hourly"]) == 24
+    assert tomorrow["is_wet"] is False
+    assert tomorrow["hourly"] == []
+
+
+async def test_a_failed_forecast_reports_unavailable_rather_than_numbers(
+    application: Application, client: AsyncClient
+) -> None:
+    from atlas.connectors.application.ports import WeatherReport
+    from tests.integration.conftest import FakeWeatherReport
+
+    application.weather_report = FakeWeatherReport(WeatherReport(error="ConnectError: down"))
+
+    body = (await client.get("/api/status", headers=AUTH)).json()
+
+    assert body["weather"]["available"] is False
+    assert body["weather"]["days"] == []
+    assert "down" in body["weather"]["detail"]

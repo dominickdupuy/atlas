@@ -396,15 +396,99 @@
 
   // --- weather ------------------------------------------------------------
 
+  function uvBand(uv) {
+    if (uv === null || uv === undefined) return ["", ""];
+    if (uv >= 11) return ["extreme", "extreme"];
+    if (uv >= 8) return ["very-high", "very high"];
+    if (uv >= 6) return ["high", "high"];
+    if (uv >= 3) return ["moderate", "moderate"];
+    return ["low", "low"];
+  }
+
+  function metric(label, value, small, uvLevel) {
+    var box = el("div", "wx-metric");
+    box.appendChild(el("dt", null, label));
+    var dd = el("dd", null, value);
+    if (small) {
+      dd.appendChild(el("small", null, small));
+    }
+    if (uvLevel) dd.setAttribute("data-uv", uvLevel);
+    box.appendChild(dd);
+    return box;
+  }
+
+  /*
+   * Hourly rain profile for a wet day. "40% chance" does not tell you whether
+   * to leave at 2pm or at 6pm; the shape does. Bars are probability, and an
+   * hour with measurable rain is drawn solid.
+   */
+  function precipChart(hourly) {
+    var wrap = el("div");
+    var visible = hourly.filter(function (h) {
+      return h.hour >= 6 && h.hour <= 22;
+    });
+    if (!visible.length) return wrap;
+
+    var chart = el("div", "wx-chart");
+    visible.forEach(function (h) {
+      var bar = el("div", "wx-bar");
+      bar.setAttribute("data-wet", h.millimetres > 0.05 ? "true" : "false");
+      var fill = el("i");
+      fill.style.height = Math.max(2, h.probability_pct) + "%";
+      bar.appendChild(fill);
+      chart.appendChild(bar);
+    });
+    wrap.appendChild(chart);
+
+    var axis = el("div", "wx-axis");
+    ["6 AM", "NOON", "6 PM", "10 PM"].forEach(function (label) {
+      axis.appendChild(el("span", null, label));
+    });
+    wrap.appendChild(axis);
+    return wrap;
+  }
+
+  function weatherDay(day) {
+    var box = el("div", "wx-day");
+
+    var head = el("div", "wx-day-head");
+    head.appendChild(el("span", "wx-day-label", day.label.toUpperCase()));
+    head.appendChild(el("span", "wx-day-summary", day.summary));
+    var hilo = el("span", "wx-hilo");
+    hilo.appendChild(el("span", null, fahrenheit(day.high_c) + "°"));
+    hilo.appendChild(el("span", "low", "  " + fahrenheit(day.low_c) + "°"));
+    head.appendChild(hilo);
+    box.appendChild(head);
+
+    var metrics = el("div", "wx-metrics");
+    var band = uvBand(day.uv_index_max);
+    metrics.appendChild(
+      metric(
+        "uv index",
+        day.uv_index_max === null || day.uv_index_max === undefined
+          ? "—"
+          : day.uv_index_max.toFixed(1),
+        band[1],
+        band[0]
+      )
+    );
+    metrics.appendChild(metric("precip chance", day.precipitation_probability_pct + "%"));
+    metrics.appendChild(metric("rainfall", day.precipitation_mm.toFixed(1), "mm"));
+    box.appendChild(metrics);
+
+    if (day.is_wet && day.hourly && day.hourly.length) {
+      box.appendChild(precipChart(day.hourly));
+    }
+    return box;
+  }
+
   function renderWeather(s) {
     var wx = s.weather || {};
     var body = $("weather-body");
     clear(body);
-    text($("weather-place"), wx.available ? "current" : "unavailable");
+    text($("weather-place"), wx.synced_at ? "synced " + hhmm(wx.synced_at) : "unavailable");
 
     if (!wx.available) {
-      // Never a fabricated number: the dev profile's StubWeather returns a
-      // canned 21C, and a canned temperature on a wall display is a lie.
       var box = el("div", "wx-unavailable");
       box.appendChild(el("strong", null, "Not connected"));
       box.appendChild(document.createTextNode(wx.detail || "no weather source configured"));
@@ -412,25 +496,21 @@
       return;
     }
 
-    var main = el("div", "wx-main");
+    var now = el("div", "wx-now");
     var temp = el("div", "wx-temp");
-    temp.appendChild(el("span", "wx-deg", fahrenheit(wx.temperature_c)));
+    temp.appendChild(el("span", "wx-deg", fahrenheit(wx.current_c)));
     temp.appendChild(el("span", "wx-unit", "°F"));
-    main.appendChild(temp);
+    now.appendChild(temp);
+    var right = el("div", "wx-now-right");
+    right.appendChild(el("span", "wx-summary", wx.current_summary || "—"));
+    right.appendChild(el("span", "wx-place", "Gainesville, FL"));
+    if (wx.detail) right.appendChild(el("span", "wx-place", "refresh failing"));
+    now.appendChild(right);
+    body.appendChild(now);
 
-    var right = el("div", "wx-right");
-    right.appendChild(el("span", "wx-summary", wx.summary || "—"));
-    right.appendChild(
-      el("span", "wx-hilo", "H " + fahrenheit(wx.high_c) + "°  L " + fahrenheit(wx.low_c) + "°")
-    );
-    main.appendChild(right);
-    body.appendChild(main);
-
-    var foot = el("div", "wx-hilo");
-    foot.style.display = "flex";
-    foot.style.justifyContent = "space-between";
-    foot.appendChild(el("span", null, "Precip " + (wx.precipitation_chance_pct ?? "—") + "%"));
-    body.appendChild(foot);
+    (wx.days || []).forEach(function (day) {
+      body.appendChild(weatherDay(day));
+    });
   }
 
   // --- runs ---------------------------------------------------------------
@@ -439,10 +519,14 @@
     var box = $("runs");
     clear(box);
     var runs = s.runs || [];
-    text($("runs-source"), "last " + runs.length + " · polled 10s");
+    var note = $("runs-note");
+    note.hidden = !s.runs_note;
+    if (s.runs_note) text(note, s.runs_note);
+
+    text($("runs-source"), runs.length ? "last " + runs.length : "idle");
 
     if (!runs.length) {
-      box.appendChild(el("p", "empty", "no runs recorded"));
+      box.appendChild(el("p", "empty", s.runs_note ? "nothing running" : "no runs recorded"));
       return;
     }
 

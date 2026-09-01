@@ -17,9 +17,7 @@ more, and per D11 nothing may require scrolling to reach.
 from __future__ import annotations
 
 import logging
-from collections import defaultdict
 from datetime import datetime, timedelta
-from itertools import pairwise
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict
@@ -29,7 +27,7 @@ from atlas.bootstrap.container import Application
 from atlas.budget.domain.ledger import UsdMicros, format_usd
 from atlas.budget.domain.policy import BudgetLevel
 from atlas.connectors.application.ports import CalendarEvent
-from atlas.jobs.domain.definition import ExecutionMode, JobDefinition
+from atlas.jobs.domain.definition import ExecutionMode
 from atlas.jobs.domain.run import JobRun, RunState
 from atlas.telemetry.infrastructure.service_probes import ServiceStatus, probe_all
 from atlas.telemetry.infrastructure.system_metrics import SystemMetrics
@@ -58,7 +56,7 @@ RECURRING_THRESHOLD = 3
 band with a cadence label. `*/30 6-22` is 34 firings — thirty-four unreadable
 slivers say less than one bar reading "every 30m - 34 runs"."""
 
-WEATHER_CACHE_SECONDS = 600.0
+WEATHER_DAYS = 2
 
 
 class _Frozen(BaseModel):
@@ -177,14 +175,32 @@ class CalendarInfo(_Frozen):
     event_count: int = 0
 
 
+class WeatherHour(_Frozen):
+    hour: int
+    probability_pct: int
+    millimetres: float
+
+
+class WeatherDay(_Frozen):
+    label: str
+    date: str
+    summary: str
+    high_c: float
+    low_c: float
+    uv_index_max: float | None
+    precipitation_probability_pct: int
+    precipitation_mm: float
+    is_wet: bool
+    hourly: list[WeatherHour]
+
+
 class WeatherInfo(_Frozen):
     available: bool
     detail: str | None = None
-    summary: str | None = None
-    temperature_c: float | None = None
-    high_c: float | None = None
-    low_c: float | None = None
-    precipitation_chance_pct: int | None = None
+    current_c: float | None = None
+    current_summary: str | None = None
+    synced_at: datetime | None = None
+    days: list[WeatherDay] = []
 
 
 class BudgetInfo(_Frozen):
@@ -203,6 +219,7 @@ class StatusSnapshot(_Frozen):
     approvals: list[ApprovalItem]
     approvals_total: int
     runs: list[RunItem]
+    runs_note: str | None
     containers: list[ContainerItem]
     system: SystemInfo
     budget: BudgetInfo
@@ -347,135 +364,6 @@ def _minutes(moment: datetime) -> int:
     return moment.hour * 60 + moment.minute
 
 
-def _cadence_label(fires: list[datetime]) -> str:
-    gaps = sorted(
-        int((later - earlier).total_seconds() // 60) for earlier, later in pairwise(fires)
-    )
-    if not gaps:
-        return ""
-    median = gaps[len(gaps) // 2]
-    if median >= 60 and median % 60 == 0:
-        return f"every {median // 60}h"
-    return f"every {median}m"
-
-
-def _run_entry(run: JobRun, tz: ZoneInfo, today: datetime) -> TimelineEntry | None:
-    started = run.started_at.astimezone(tz)
-    day_offset = (started.date() - today.date()).days
-    if not 0 <= day_offset < TIMELINE_DAYS:
-        return None
-    finished = run.finished_at.astimezone(tz) if run.finished_at else None
-    detail = str(run.state).replace("_", " ")
-    if finished:
-        seconds = (finished - started).total_seconds()
-        detail = f"{detail} · {seconds:.1f}s" if seconds < 60 else f"{detail} · {seconds / 60:.0f}m"
-    return TimelineEntry(
-        kind="job_run",
-        label=str(run.job_id),
-        detail=detail,
-        day_offset=day_offset,
-        start_minutes=_minutes(started),
-        end_minutes=_minutes(finished) if finished else None,
-        category="atlas",
-        status=str(run.state),
-    )
-
-
-def _run_entries(runs: list[JobRun], tz: ZoneInfo, today: datetime) -> list[TimelineEntry]:
-    """Collapse repetitive SUCCESS, never repetitive failure.
-
-    A */30 job produces thirty-odd identical green bars a day, which drowns
-    the one red one — the exact opposite of what the board is for (D11). So
-    completed runs of the same job collapse into a single band with a count,
-    and anything that failed, timed out or is awaiting approval always keeps
-    its own block.
-    """
-    entries: list[TimelineEntry] = []
-    completed: dict[tuple[str, int], list[JobRun]] = defaultdict(list)
-
-    for run in runs:
-        started = run.started_at.astimezone(tz)
-        day_offset = (started.date() - today.date()).days
-        if not 0 <= day_offset < TIMELINE_DAYS:
-            continue
-        if run.state is RunState.COMPLETED:
-            completed[(str(run.job_id), day_offset)].append(run)
-            continue
-        entry = _run_entry(run, tz, today)
-        if entry:
-            entries.append(entry)
-
-    for (job_id, day_offset), group in completed.items():
-        if len(group) <= RECURRING_THRESHOLD:
-            entries.extend(e for e in (_run_entry(run, tz, today) for run in group) if e)
-            continue
-        group.sort(key=lambda run: run.started_at)
-        first = group[0].started_at.astimezone(tz)
-        last = group[-1].started_at.astimezone(tz)
-        entries.append(
-            TimelineEntry(
-                kind="job_run",
-                label=job_id,
-                detail=f"{len(group)} runs · all completed",
-                day_offset=day_offset,
-                start_minutes=_minutes(first),
-                end_minutes=_minutes(last),
-                category="atlas",
-                status="completed",
-                count=len(group),
-            )
-        )
-    return entries
-
-
-def _scheduled_entries(
-    fires: list[tuple[JobDefinition, datetime]], tz: ZoneInfo, today: datetime
-) -> list[TimelineEntry]:
-    """Group each job's firings per day, collapsing frequent ones into a band."""
-    grouped: dict[tuple[str, int], list[datetime]] = defaultdict(list)
-    definitions: dict[str, JobDefinition] = {}
-    for definition, fire in fires:
-        local = fire.astimezone(tz)
-        day_offset = (local.date() - today.date()).days
-        if not 0 <= day_offset < TIMELINE_DAYS:
-            continue
-        grouped[(str(definition.id), day_offset)].append(local)
-        definitions[str(definition.id)] = definition
-
-    entries: list[TimelineEntry] = []
-    for (job_id, day_offset), moments in grouped.items():
-        moments.sort()
-        definition = definitions[job_id]
-        tier_mode = f"tier {int(definition.tier)} · {definition.mode}"
-        if len(moments) > RECURRING_THRESHOLD:
-            entries.append(
-                TimelineEntry(
-                    kind="job_scheduled",
-                    label=job_id,
-                    detail=f"{_cadence_label(moments)} · {len(moments)} runs · {tier_mode}",
-                    day_offset=day_offset,
-                    start_minutes=_minutes(moments[0]),
-                    end_minutes=_minutes(moments[-1]),
-                    category="atlas",
-                    count=len(moments),
-                )
-            )
-            continue
-        for moment in moments:
-            entries.append(
-                TimelineEntry(
-                    kind="job_scheduled",
-                    label=job_id,
-                    detail=f"{moment.strftime('%H:%M')} · {tier_mode}",
-                    day_offset=day_offset,
-                    start_minutes=_minutes(moment),
-                    end_minutes=None,
-                    category="atlas",
-                )
-            )
-    return entries
-
-
 def _calendar_entries(
     events: tuple[CalendarEvent, ...], tz: ZoneInfo, today: datetime
 ) -> list[TimelineEntry]:
@@ -511,14 +399,16 @@ def _calendar_entries(
 
 def build_timeline(
     now_local: datetime,
-    runs: list[JobRun],
-    fires: list[tuple[JobDefinition, datetime]],
     tz: ZoneInfo,
     calendar_events: tuple[CalendarEvent, ...] = (),
 ) -> tuple[list[TimelineDay], list[TimelineEntry]]:
-    entries = _run_entries(runs, tz, now_local)
-    entries.extend(_scheduled_entries(fires, tz, now_local))
-    entries.extend(_calendar_entries(calendar_events, tz, now_local))
+    """The calendar shows the calendar.
+
+    Job runs and cron occurrences used to be drawn here too. They were real
+    executions, but against stub connectors they represent no actual work, and
+    a wall of them buried the appointments the panel exists to show.
+    """
+    entries = _calendar_entries(calendar_events, tz, now_local)
     entries.sort(key=lambda item: (item.day_offset, item.start_minutes))
     entries = entries[:MAX_TIMELINE_ENTRIES]
 
@@ -550,7 +440,6 @@ class StatusAssembler:
     def __init__(self, application: Application) -> None:
         self._app = application
         self._tz = ZoneInfo(application.settings.tz)
-        self._weather_cache: tuple[datetime, WeatherInfo] | None = None
 
     async def _calendar(
         self, window_start: datetime, window_end: datetime
@@ -580,32 +469,52 @@ class StatusAssembler:
             feed.events,
         )
 
-    async def _weather(self, now: datetime) -> WeatherInfo:
+    async def _weather(self) -> WeatherInfo:
         settings = self._app.settings
-        if settings.profile != "prod":
-            # StubWeather returns a canned 21C. Reporting that as the weather
-            # on a wall display is worse than reporting nothing.
-            return WeatherInfo(available=False, detail="stub connector active (ATLAS_PROFILE=dev)")
-        cached = self._weather_cache
-        if cached and (now - cached[0]).total_seconds() < WEATHER_CACHE_SECONDS:
-            return cached[1]
-        try:
-            forecast = await self._app.weather.get_forecast(
-                settings.weather_lat, settings.weather_lon
-            )
-        except Exception as exc:
-            logger.warning("weather unavailable: %s", exc)
-            return WeatherInfo(available=False, detail=f"unavailable: {exc}")
-        info = WeatherInfo(
-            available=True,
-            summary=forecast.summary,
-            temperature_c=forecast.temperature_c,
-            high_c=forecast.high_c,
-            low_c=forecast.low_c,
-            precipitation_chance_pct=forecast.precipitation_chance_pct,
+        report = await self._app.weather_report.get_report(
+            settings.weather_lat, settings.weather_lon
         )
-        self._weather_cache = (now, info)
-        return info
+        if not report.days:
+            return WeatherInfo(available=False, detail=report.error or "no forecast returned")
+
+        days: list[WeatherDay] = []
+        for index, day in enumerate(report.days[:WEATHER_DAYS]):
+            days.append(
+                WeatherDay(
+                    label="Today" if index == 0 else "Tomorrow",
+                    date=day.date,
+                    summary=day.summary,
+                    high_c=day.high_c,
+                    low_c=day.low_c,
+                    uv_index_max=day.uv_index_max,
+                    precipitation_probability_pct=day.precipitation_probability_pct,
+                    precipitation_mm=day.precipitation_mm,
+                    is_wet=day.is_wet,
+                    # The hourly profile is only worth its payload, and its
+                    # space on the card, on a day that is actually wet.
+                    hourly=(
+                        [
+                            WeatherHour(
+                                hour=hour.time.hour,
+                                probability_pct=hour.probability_pct,
+                                millimetres=hour.millimetres,
+                            )
+                            for hour in day.hourly
+                        ]
+                        if day.is_wet
+                        else []
+                    ),
+                )
+            )
+
+        return WeatherInfo(
+            available=True,
+            detail=report.error,
+            current_c=report.current_c,
+            current_summary=report.current_summary,
+            synced_at=report.fetched_at,
+            days=days,
+        )
 
     async def snapshot(self) -> StatusSnapshot:
         app = self._app
@@ -621,11 +530,13 @@ class StatusAssembler:
         window_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
         window_end = window_start + timedelta(days=TIMELINE_DAYS)
         calendar, calendar_events = await self._calendar(window_start, window_end)
-        fires = app.scheduler.occurrences_between(now, now + timedelta(days=TIMELINE_DAYS))
-        timeline_days, timeline = build_timeline(
-            now_local, recent, fires, self._tz, calendar_events
-        )
-        weather = await self._weather(now)
+        timeline_days, timeline = build_timeline(now_local, self._tz, calendar_events)
+        weather = await self._weather()
+
+        # In the dev profile every connector is a stub, so a "completed" run
+        # means a job talked to canned data and published nothing. Listing
+        # those as activity overstates what the system is doing.
+        real_jobs = app.settings.profile == "prod"
 
         alerts = build_alerts(
             recent,
@@ -653,7 +564,10 @@ class StatusAssembler:
             alerts_total=len(alerts),
             approvals=[_approval_item(approval) for approval in pending[:MAX_APPROVALS]],
             approvals_total=len(pending),
-            runs=[_run_item(run) for run in recent[:MAX_RUNS]],
+            runs=[_run_item(run) for run in recent[:MAX_RUNS]] if real_jobs else [],
+            runs_note=(
+                None if real_jobs else "stub profile — scheduled jobs execute against canned data"
+            ),
             containers=[_container_item(status) for status in containers],
             system=_system_info(metrics),
             budget=BudgetInfo(

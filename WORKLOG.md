@@ -343,6 +343,47 @@ Two things to do when convenient:
 - The URL was pasted into a chat transcript. If that matters, re-share the
   calendar in Outlook to rotate it and drop the new URL in the same place.
 
+## 2026-09-01 16:30 — Weather card, and jobs off the calendar
+
+**Jobs removed from the calendar and the runs card.** They were real
+executions, but in the dev profile every connector is a stub, so a "completed"
+run means a job read canned data and published nothing. Showing them overstated
+what the system does and buried the appointments the panel exists for. The
+calendar now shows only calendar events; the RUNS card is kept but reads
+`nothing running` with the reason. Failures still alert regardless of profile —
+hiding stub successes must not hide a real crash
+(`test_failures_still_alert_even_in_the_stub_profile`). Runs reappear
+automatically under `ATLAS_PROFILE=prod`.
+
+Removed with it: the run/scheduled timeline grouping and
+`CronScheduler.occurrences_between`, rather than leaving dead code. Recoverable
+from git if jobs should ever return to the calendar.
+
+**Weather is live.** Two days, UV index, precipitation chance and rainfall,
+plus an hourly precipitation profile drawn only on a wet day — "40% chance"
+does not tell you whether to leave at 2pm or 6pm, and the shape does.
+
+Source is Open-Meteo, refetched every 15 minutes and cached, so the board's
+10s poll costs nothing. **On "a governmental API":** the US NWS
+(`api.weather.gov`) is the more literally governmental source and is free, but
+its gridpoint forecast publishes **no UV index**, which is half of what this
+card is for — it would have needed a second EPA endpoint bolted on. Open-Meteo
+blends the national services (NOAA included), carries UV directly, needs no
+key, and was already this project's chosen weather source under D19. Flagged
+rather than silently substituted.
+
+Location set to the UF campus (29.6436, -82.3549) in `config.toml`, inferred
+from the campus buildings in the calendar feed — change `weather_lat` /
+`weather_lon` if that is wrong.
+
+A failed refresh keeps the last good forecast and says so; a forecast that has
+never loaded reports unavailable rather than inventing numbers.
+
+**Layout:** board padding cut from 48/56/44 to 22/26/20 and gutters from 24px
+to 14px — on a wall the bezel already supplies the margin. Weather card is
+roughly three times its old height; RUNS takes the remainder and is
+correspondingly shorter.
+
 ## Running log
 
 ### 23:51 — Orientation

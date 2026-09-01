@@ -91,10 +91,13 @@ body {
   transform-origin: center center;
   position: relative;
   overflow: hidden;
-  padding: 48px 56px 44px;
+  /* Tightened from the artboard's 48/56/44 and 24px gutters: on a wall the
+     bezel already supplies the margin, and the space is better spent on the
+     content than on the frame. */
+  padding: 22px 26px 20px;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 14px;
   background: radial-gradient(120% 90% at 12% -10%, #16233b 0%, #0a0f18 46%, #05070b 100%);
   color: var(--ink);
 }
@@ -257,7 +260,7 @@ body {
   z-index: 1;
   flex: none;
   border-radius: var(--radius);
-  padding: 14px 22px 16px;
+  padding: 10px 18px 12px;
   background: rgba(255, 69, 58, 0.13);
   border: 1px solid rgba(255, 69, 58, 0.4);
   box-shadow: var(--glass-inset), 0 18px 44px rgba(0, 0, 0, 0.45);
@@ -384,7 +387,7 @@ body[data-stale="true"] .head-right .pill {
   min-height: 0;
   display: flex;
   flex-direction: row;
-  gap: 24px;
+  gap: 14px;
 }
 
 .panel {
@@ -411,21 +414,28 @@ body[data-stale="true"] .head-right .pill {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 14px;
 }
 
-.panel-weather,
 .panel-system {
   flex: none;
-  padding: 20px 24px;
-  gap: 14px;
+  padding: 14px 20px;
+  gap: 10px;
+}
+
+/* Roughly three times its old height: two days, UV, and the hourly rain
+   profile need the room, and RUNS gives it up by taking the remainder. */
+.panel-weather {
+  flex: 0 0 auto;
+  padding: 16px 20px;
+  gap: 12px;
 }
 
 .panel-runs {
   flex: 1;
   min-height: 0;
-  padding: 20px 24px;
-  gap: 14px;
+  padding: 14px 20px;
+  gap: 8px;
 }
 
 .panel-head {
@@ -747,6 +757,10 @@ body[data-stale="true"] .head-right .pill {
   background: var(--blue);
 }
 
+.key i[data-cat="free"] {
+  background: var(--purple);
+}
+
 .legend-note {
   margin-left: auto;
   color: var(--ink-35);
@@ -757,14 +771,17 @@ body[data-stale="true"] .head-right .pill {
 .weather-body {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
+  min-height: 0;
 }
 
-.wx-main {
+.wx-now {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
 }
 
 .wx-temp {
@@ -774,7 +791,7 @@ body[data-stale="true"] .head-right .pill {
 }
 
 .wx-deg {
-  font-size: 68px;
+  font-size: 62px;
   font-weight: 200;
   line-height: 0.85;
   letter-spacing: -0.04em;
@@ -782,27 +799,151 @@ body[data-stale="true"] .head-right .pill {
 }
 
 .wx-unit {
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 300;
   color: var(--ink-60);
 }
 
-.wx-right {
+.wx-now-right {
   text-align: right;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
 }
 
 .wx-summary {
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 500;
 }
 
-.wx-hilo {
+.wx-place {
+  font-size: 13px;
+  color: var(--ink-45);
+}
+
+.wx-day {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.wx-day-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.wx-day-label {
   font-size: 14px;
-  color: var(--ink-50);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--ink-55);
+}
+
+.wx-day-summary {
+  font-size: 16px;
+  font-weight: 600;
+  flex: 1;
+}
+
+.wx-hilo {
+  font-size: 17px;
   font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.wx-hilo .low {
+  color: var(--ink-50);
+  font-weight: 400;
+}
+
+.wx-metrics {
+  display: flex;
+  gap: 8px;
+}
+
+.wx-metric {
+  flex: 1;
+  border-radius: 9px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.wx-metric dt {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-45);
+}
+
+.wx-metric dd {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.wx-metric dd small {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-50);
+  margin-left: 5px;
+}
+
+.wx-metric dd[data-uv="high"] {
+  color: var(--orange);
+}
+
+.wx-metric dd[data-uv="very-high"],
+.wx-metric dd[data-uv="extreme"] {
+  color: var(--red);
+}
+
+/* Hourly rain profile. Drawn only on a wet day: "40%" says nothing about
+   whether to leave at 2pm or 6pm, and the shape does. */
+.wx-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 74px;
+  padding: 6px 2px 0;
+  border-radius: 9px;
+  background: rgba(10, 132, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.wx-bar {
+  flex: 1;
+  position: relative;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.wx-bar i {
+  display: block;
+  border-radius: 2px 2px 0 0;
+  background: linear-gradient(180deg, #64d2ff, rgba(10, 132, 255, 0.55));
+  min-height: 1px;
+}
+
+.wx-bar[data-wet="true"] i {
+  background: linear-gradient(180deg, #0a84ff, rgba(10, 132, 255, 0.7));
+}
+
+.wx-axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--ink-42);
+  font-variant-numeric: tabular-nums;
+  padding: 0 2px;
 }
 
 .wx-unavailable {
@@ -898,7 +1039,14 @@ body[data-stale="true"] .head-right .pill {
 .empty {
   font-size: 15px;
   color: var(--ink-45);
-  padding: 8px 0;
+  padding: 6px 0;
+}
+
+.runs-note {
+  margin: auto 0 0;
+  font-size: 12px;
+  color: var(--ink-42);
+  letter-spacing: 0.01em;
 }
 
 /* --- system --------------------------------------------------------------- */
