@@ -32,7 +32,7 @@ kind = "job"
 # backup right after; this pulls that backup, classifies the queue with
 # Claude, applies the decisions to the container, and commits new rules.
 schedule = "30 8 * * *"
-job = ".venv/bin/python -m fintrack.autoreview"
+job = "FINTRACK_ENV_FILE=/home/domdd/finance.env .venv/bin/python -m fintrack.autoreview"
 setup = "python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt"
 setup_marker = ".venv/bin/python"
 timeout_seconds = 1500
