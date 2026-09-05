@@ -1,0 +1,38 @@
+# Repositories hosted on this machine, one [[repo]] each.
+#
+# Rendered into /etc/cron.d/atlas-repos and atlas-repo-*.service units by
+# `scripts/repos.py apply` (run it after editing this file). Logs land in
+# /var/log/atlas-repos/<name>/, summaries in /var/lib/atlas-repos/<name>.json,
+# and `scripts/repos.py status` / `queue` read those back.
+#
+# Fields
+#   name       short id; becomes the log directory and unit name
+#   path       checkout on disk (cloned on first apply)
+#   url        git remote; use an ssh alias from ~/.ssh/config when the host
+#              needs its own deploy key (see `Host github-finance`)
+#   branch     branch to track                                   (default main)
+#   kind       job | service | both
+#   schedule   cron expression, five fields, host local time      (job, both)
+#   job        command run in `path`; output captured to the log (job, both)
+#   service    long-running command systemd keeps alive          (service, both)
+#   setup      one-time command run in `path` when setup_marker is absent
+#   setup_marker  file whose presence means setup already ran
+#   timeout_seconds  kill the job after this long                 (default 3600)
+#   env        extra environment for the service                  (table)
+#   enabled    false removes the cron line / stops the unit, keeps the checkout
+
+[[repo]]
+name = "finance"
+description = "Morning review: classify what the rules could not, push to the cloud ledger"
+path = "/opt/finance"
+url = "git@github-finance:dominickdupuy/finances.git"
+branch = "master"
+kind = "job"
+# 08:30 every day. The cloud container syncs at 08:00 and uploads the day's
+# backup right after; this pulls that backup, classifies the queue with
+# Claude, applies the decisions to the container, and commits new rules.
+schedule = "30 8 * * *"
+job = ".venv/bin/python -m fintrack.autoreview"
+setup = "python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt"
+setup_marker = ".venv/bin/python"
+timeout_seconds = 1500
