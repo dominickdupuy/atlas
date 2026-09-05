@@ -61,6 +61,11 @@ class Settings(BaseSettings):
     db_path: Path = Path("./data/state.db")
     jobs_dir: Path = Path("../jobs")
 
+    # Hosted repositories (docs/repos.md). The runner only ever READS these:
+    # scripts/repos.py owns both, and the board shows what it finds there.
+    repos_registry: Path = Path("/opt/atlas/infra/repos.toml")
+    repos_state_dir: Path = Path("/var/lib/atlas-repos")
+
     mqtt_host: str = "127.0.0.1"
     mqtt_port: int = 1883
 

@@ -1,17 +1,32 @@
 <h2>Runs</h2>
-{% if runs %}
+{% if pending or history %}
 <table>
   <tbody>
-    {% for run in runs %}
-    <tr class="state-{{ run.state.value }}">
-      <td class="job-id">{{ run.job_id }}</td>
-      <td><span class="badge badge-{{ run.state.value }}">{{ run.state.value | replace("_", " ") }}</span></td>
-      <td class="time">{{ run.started_at | localtime }}</td>
-      <td class="detail">{{ (run.error or "")[:80] }}</td>
+    {% for entry in pending %}
+    <tr class="state-{{ entry.state }} pending">
+      <td class="job-id">{{ entry.name }}<span class="origin origin-{{ entry.origin }}">{{ entry.origin }}</span></td>
+      <td><span class="badge badge-{{ entry.state }}">{{ entry.state | replace("_", " ") }}</span></td>
+      <td class="time">{{ entry.when | localtime }}</td>
+      <td class="detail">{{ entry.detail }}</td>
     </tr>
     {% endfor %}
+    {% if pending_more %}
+    <tr class="more"><td colspan="4" class="detail">+{{ pending_more }} more queued</td></tr>
+    {% endif %}
+
+    {% for entry in history %}
+    <tr class="state-{{ entry.state }}">
+      <td class="job-id">{{ entry.name }}<span class="origin origin-{{ entry.origin }}">{{ entry.origin }}</span></td>
+      <td><span class="badge badge-{{ entry.state }}">{{ entry.state | replace("_", " ") }}</span></td>
+      <td class="time">{{ entry.when | localtime }}</td>
+      <td class="detail">{{ entry.detail }}</td>
+    </tr>
+    {% endfor %}
+    {% if history_more %}
+    <tr class="more"><td colspan="4" class="detail">+{{ history_more }} more</td></tr>
+    {% endif %}
   </tbody>
 </table>
 {% else %}
-<p class="empty">No runs yet.</p>
+<p class="empty">Nothing queued or run yet.</p>
 {% endif %}

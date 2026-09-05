@@ -89,6 +89,11 @@ async def application(tmp_path: Path) -> AsyncIterator[Application]:
         jobs_dir=FIXTURE_JOBS,
         tz="UTC",
         ntfy_token="",
+        # Point the hosted-repo reader at an empty tmp dir: the defaults are
+        # real host paths, and a suite that reads /var/lib/atlas-repos passes
+        # or fails depending on what this machine happened to run today.
+        repos_registry=tmp_path / "repos.toml",
+        repos_state_dir=tmp_path / "repo-state",
     )
     app = build_application(settings)
     app.weather_report = FakeWeatherReport()

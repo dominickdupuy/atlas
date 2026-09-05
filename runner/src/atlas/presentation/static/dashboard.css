@@ -92,6 +92,27 @@ td { padding: 0.35rem 0.6rem 0.35rem 0; vertical-align: baseline; }
 .badge-running { background: rgba(88, 166, 255, 0.15); color: var(--accent); }
 .badge-awaiting_approval { background: rgba(210, 153, 34, 0.2); color: var(--warn); }
 .badge-failed, .badge-timed_out { background: rgba(248, 81, 73, 0.2); color: var(--bad); }
+.badge-queued { background: rgba(139, 148, 158, 0.18); color: var(--muted); }
+
+/* Queued work reads as the near future, so it is dimmed and separated from
+   the history below it rather than given another colour to decode. */
+tr.pending .time { color: var(--fg); }
+tr.pending + tr:not(.pending):not(.more) td { border-top: 1px solid var(--line, rgba(139, 148, 158, 0.25)); }
+tr.more td { padding-top: 0.1rem; font-size: 0.8em; }
+
+/* Which system owns the row: an atlas job, or a hosted repo (docs/repos.md). */
+.origin {
+  margin-left: 0.4rem;
+  padding: 0 0.3rem;
+  border-radius: 3px;
+  font-size: 0.7em;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  background: rgba(139, 148, 158, 0.14);
+}
+.origin-repo { color: var(--accent); background: rgba(88, 166, 255, 0.12); }
 
 .approvals li, .schedule li, .health li {
   list-style: none;
