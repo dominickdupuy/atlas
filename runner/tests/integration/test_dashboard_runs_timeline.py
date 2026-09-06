@@ -16,6 +16,7 @@ from httpx import AsyncClient
 
 from atlas.bootstrap.container import Application
 from atlas.jobs.domain.run import JobRun, RunState
+from atlas.presentation.http.runs import MAX_PENDING
 from atlas.shared.ids import JobId, RunId
 from tests.integration.conftest import AUTH
 
@@ -160,3 +161,203 @@ async def test_truncation_admits_how_much_was_hidden(
     panel = (await client.get("/partials/jobs", headers=AUTH)).text
 
     assert "more queued" in panel
+
+
+async def test_status_includes_hosted_queue_and_history_in_stub_profile(
+    client: AsyncClient, application: Application
+) -> None:
+    state = _register_repo(application)
+    (state / "finance.json").write_text(
+        json.dumps({"status": "ok", "started": "2026-09-05T16:52:20", "exit": 0}),
+        encoding="utf-8",
+    )
+    (state / "queue.json").write_text(
+        json.dumps([{"name": "finance", "at": "2099-01-01T08:30", "note": "one-off"}]),
+        encoding="utf-8",
+    )
+
+    body = (await client.get("/api/status", headers=AUTH)).json()
+    timeline = body["run_timeline"]
+    repo_pending = [row for row in timeline["pending"] if row["origin"] == "repo"]
+
+    assert {row["detail"] for row in repo_pending} == {"cron", "one-off"}
+    assert all(row["state"] == "queued" for row in repo_pending)
+    assert timeline["pending_total"] == 3  # cron, the queued one-off, and the Atlas job
+    assert timeline["history"][0]["name"] == "finance"
+    assert timeline["history"][0]["state"] == "completed"
+
+
+async def test_status_rereads_the_queue_on_each_poll(
+    client: AsyncClient, application: Application
+) -> None:
+    state = _register_repo(application)
+    queue = state / "queue.json"
+    queue.write_text(
+        json.dumps([{"name": "finance", "at": "2099-01-01T08:30", "note": "newly queued"}]),
+        encoding="utf-8",
+    )
+    first = (await client.get("/api/status", headers=AUTH)).json()["run_timeline"]
+    queue.write_text("[]", encoding="utf-8")
+    second = (await client.get("/api/status", headers=AUTH)).json()["run_timeline"]
+
+    assert any(row["detail"] == "newly queued" for row in first["pending"])
+    assert second["pending_total"] == first["pending_total"] - 1
+    assert all(row["detail"] != "newly queued" for row in second["pending"])
+
+
+async def test_running_hosted_repo_is_pending_in_both_boards(
+    client: AsyncClient, application: Application
+) -> None:
+    state = _register_repo(application)
+    (state / "finance.json").write_text(
+        json.dumps({"status": "running", "started": "2026-09-05T16:52:20", "trigger": "cron"}),
+        encoding="utf-8",
+    )
+    timeline = (await client.get("/api/status", headers=AUTH)).json()["run_timeline"]
+    panel = (await client.get("/partials/jobs", headers=AUTH)).text
+
+    assert timeline["pending"][0]["state"] == "running"
+    assert timeline["pending"][0]["name"] == "finance"
+    assert timeline["history"] == []
+    assert "badge-running" in panel
+    assert "badge-failed" not in panel
+
+
+async def test_status_reports_total_before_queue_truncation(
+    client: AsyncClient, application: Application
+) -> None:
+    state = _register_repo(application)
+    (state / "queue.json").write_text(
+        json.dumps(
+            [
+                {"name": "finance", "at": "2099-01-01T08:30", "note": str(n)}
+                for n in range(MAX_PENDING + 4)
+            ]
+        ),
+        encoding="utf-8",
+    )
+    timeline = (await client.get("/api/status", headers=AUTH)).json()["run_timeline"]
+
+    assert len(timeline["pending"]) == MAX_PENDING
+    # every queued entry, plus the repo's cron fire and the Atlas job's
+    assert timeline["pending_total"] == MAX_PENDING + 6
+
+
+async def test_status_separates_pending_atlas_work_from_finished_history(
+    client: AsyncClient, application: Application
+) -> None:
+    application.settings.profile = "prod"
+    await _seed_run(application, RunState.AWAITING_APPROVAL, "waiting")
+    await _seed_run(application, RunState.COMPLETED, "finished")
+
+    timeline = (await client.get("/api/status", headers=AUTH)).json()["run_timeline"]
+
+    assert [row["state"] for row in timeline["pending"]] == ["awaiting_approval", "queued"]
+    assert [row["state"] for row in timeline["history"]] == ["completed"]
+
+
+async def test_stub_atlas_runs_reach_the_board_carrying_their_label(
+    client: AsyncClient, application: Application
+) -> None:
+    """The dev profile used to empty the panel of Atlas work entirely, so the
+    screen read "idle" while the scheduler fired all day. Show the work; say
+    what it is."""
+    await _seed_run(application, RunState.COMPLETED)
+
+    timeline = (await client.get("/api/status", headers=AUTH)).json()["run_timeline"]
+    atlas = [row for row in timeline["history"] if row["origin"] == "atlas"]
+
+    assert [row["name"] for row in atlas] == ["lights-out"]
+    assert atlas[0]["detail"] == "stub"
+
+
+async def test_a_repeating_job_collapses_instead_of_filling_the_panel(
+    client: AsyncClient, application: Application
+) -> None:
+    """calendar-today fires every half hour. Left as one row each it evicts
+    every other origin from an eight-row panel, so the panel stops being the
+    combined timeline it exists to be."""
+    state = _register_repo(application)
+    (state / "finance.json").write_text(
+        json.dumps({"status": "ok", "started": "2020-01-01T16:52:20", "exit": 0}),
+        encoding="utf-8",
+    )
+    for index in range(12):
+        await _seed_run(application, RunState.COMPLETED, f"repeat-{index}")
+
+    timeline = (await client.get("/api/status", headers=AUTH)).json()["run_timeline"]
+
+    assert [row["name"] for row in timeline["history"]] == ["lights-out", "finance"]
+    assert "12 runs" in timeline["history"][0]["detail"]
+    assert timeline["history_total"] == 2
+
+
+async def test_a_failure_is_not_collapsed_into_the_successes_around_it(
+    client: AsyncClient, application: Application
+) -> None:
+    await _seed_run(application, RunState.COMPLETED, "before")
+    await _seed_run(application, RunState.FAILED, "boom")
+    await _seed_run(application, RunState.COMPLETED, "after")
+
+    timeline = (await client.get("/api/status", headers=AUTH)).json()["run_timeline"]
+
+    assert [row["state"] for row in timeline["history"]] == ["completed", "failed", "completed"]
+
+
+async def test_runs_of_a_retired_job_leave_the_board_with_it(
+    client: AsyncClient, application: Application
+) -> None:
+    """Removing a job definition is how a person says "stop": its old rows in
+    SQLite must not keep it on the screen."""
+    now = datetime.now(UTC)
+    await application.run_repo.add(
+        JobRun(
+            run_id=RunId("ghost"),
+            job_id=JobId("retired-job"),
+            tier=1,
+            mode="read",
+            state=RunState.COMPLETED,
+            started_at=now - timedelta(seconds=3),
+            finished_at=now,
+        )
+    )
+    await _seed_run(application, RunState.COMPLETED)
+
+    timeline = (await client.get("/api/status", headers=AUTH)).json()["run_timeline"]
+
+    assert [row["name"] for row in timeline["history"]] == ["lights-out"]
+
+
+async def test_finance_figures_ride_on_the_run_detail(
+    client: AsyncClient, application: Application
+) -> None:
+    """The point of the finance row: how many transactions the ledger holds
+    and how many are still waiting for a category, readable at a glance."""
+    state = _register_repo(application)
+    (state / "finance.json").write_text(
+        json.dumps(
+            {
+                "status": "ok",
+                "started": "2026-09-05T16:52:20",
+                "trigger": "cron",
+                "duration_seconds": 57.2,
+                "exit": 0,
+                "summary": {
+                    "transactions": 1204,
+                    "reviewed": 3,
+                    "uncategorized": 0,
+                    "decisions": 2,
+                    "rules": 1,
+                    "uncategorized_before": 3,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    timeline = (await client.get("/api/status", headers=AUTH)).json()["run_timeline"]
+    finance = next(row for row in timeline["history"] if row["name"] == "finance")
+
+    assert finance["detail"] == (
+        "cron · 57s · 1,204 transactions · 3 reviewed · 0 uncategorized · 2 decisions · 1 new rules"
+    )

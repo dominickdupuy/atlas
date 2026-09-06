@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-atlas-board>
+<html lang="en" data-atlas-board data-asset-version="{{ asset_version }}">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -43,9 +43,40 @@
           </div>
 
           <div class="head-right">
-            <div class="pill" id="mode-pill">
-              <span class="pill-dot"></span>
-              <span class="pill-text" id="mode-text">STARTING</span>
+            <!--
+              A scale model of the desk dial (LifeSmart Colo Play) that stands
+              beside this monitor: rounded-square body, a key at each corner,
+              an oversized clickable dial with a round screen behind an LED
+              ring. It is a mirror, not a control — nothing here is focusable,
+              clickable or reachable by a pointer, so the board itself still
+              carries no input (D11). It lights up because the hardware next to
+              the screen was pressed. The dial's screen carries the display
+              mode the header pill used to.
+
+              The top-left key selects the screen already showing, so its LED
+              is lit from the markup; the other three report a press and
+              nothing more until something is behind them.
+            -->
+            <div class="deck" id="deck" data-mode="STARTING" aria-hidden="true">
+              <div class="deck-key" data-key="1" data-pos="tl" data-active="true">
+                <span class="deck-led"></span>
+              </div>
+              <div class="deck-key" data-key="2" data-pos="tr">
+                <span class="deck-led"></span>
+              </div>
+              <div class="deck-key" data-key="3" data-pos="bl">
+                <span class="deck-led"></span>
+              </div>
+              <div class="deck-key" data-key="4" data-pos="br">
+                <span class="deck-led"></span>
+              </div>
+              <div class="deck-dial" id="deck-dial">
+                <div class="deck-ring" id="deck-ring"></div>
+                <div class="deck-knurl"></div>
+                <div class="deck-screen">
+                  <span class="deck-screen-text" id="mode-text" data-fit="tight">INIT</span>
+                </div>
+              </div>
             </div>
             <div class="clockwrap">
               <div class="clockline">

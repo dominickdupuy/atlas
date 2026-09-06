@@ -27,3 +27,6 @@ data/
 # OS noise
 .DS_Store
 Thumbs.db
+
+# Local, reproducible code graph and analysis caches
+graphify-out/

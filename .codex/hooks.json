@@ -1,0 +1,19 @@
+{
+  "description": "Load Atlas repository notes and local Graphify context at session start, resume, and compaction.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/.codex/hooks/graphify_context.py\"",
+            "timeout": 5,
+            "statusMessage": "Loading Atlas Graphify context",
+            "additionalContextLimit": 10000
+          }
+        ]
+      }
+    ]
+  }
+}

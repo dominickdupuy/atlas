@@ -29,6 +29,8 @@ from atlas.budget.domain.policy import BudgetLevel
 from atlas.connectors.application.ports import CalendarEvent
 from atlas.jobs.domain.definition import ExecutionMode
 from atlas.jobs.domain.run import JobRun, RunState
+from atlas.presentation.http.assets import board_asset_version
+from atlas.presentation.http.runs import RunsTimeline, build_runs_timeline
 from atlas.telemetry.infrastructure.service_probes import ServiceStatus, probe_all
 from atlas.telemetry.infrastructure.system_metrics import SystemMetrics
 
@@ -49,8 +51,20 @@ TIMELINE_END_HOUR = 22
 shipped jobs actually run 06:00-22:00, and a timeline that clips real work
 to match an artboard is a lying timeline."""
 
-TIMELINE_DAYS = 3
-MAX_TIMELINE_ENTRIES = 60
+TIMELINE_VISIBLE_DAYS = 3
+"""Day columns drawn at once. The board still shows three days; the extra
+days below are fetched so the desk dial can pan through them without a
+round trip per detent (the dial emits ~8 events a second)."""
+
+TIMELINE_PAST_DAYS = 7
+TIMELINE_FUTURE_DAYS = 7
+"""How far the dial can reach either side of today, as day offsets."""
+
+MAX_TIMELINE_ENTRIES_PER_DAY = 20
+"""Capped per day, not across the window. A single global cap sorted by
+day would spend its whole budget on the earliest days and silently drop
+the later ones, so panning forward would land on empty columns that look
+like a free afternoon."""
 RECURRING_THRESHOLD = 3
 """Above this many firings of one job in one day, the board draws a single
 band with a cadence label. `*/30 6-22` is 34 firings — thirty-four unreadable
@@ -75,6 +89,7 @@ class ServiceInfo(_Frozen):
     profile: str
     version: str
     revision: str
+    asset_version: str
     uptime_seconds: float
     scheduler_paused: bool
     display_mode: str
@@ -130,6 +145,7 @@ class SystemInfo(_Frozen):
     load_1: float | None
     load_5: float | None
     load_15: float | None
+    load_percent: float | None
     mem_used_percent: float | None
     mem_total_bytes: int | None
     disk_used_percent: float | None
@@ -221,11 +237,13 @@ class StatusSnapshot(_Frozen):
     approvals_total: int
     runs: list[RunItem]
     runs_note: str | None
+    run_timeline: RunsTimeline
     containers: list[ContainerItem]
     system: SystemInfo
     budget: BudgetInfo
     timeline_start_hour: int
     timeline_end_hour: int
+    timeline_visible_days: int
     timeline_days: list[TimelineDay]
     timeline: list[TimelineEntry]
     calendar: CalendarInfo
@@ -279,6 +297,7 @@ def _system_info(metrics: SystemMetrics) -> SystemInfo:
         load_1=metrics.load_1,
         load_5=metrics.load_5,
         load_15=metrics.load_15,
+        load_percent=metrics.load_percent,
         mem_used_percent=metrics.mem_used_percent,
         mem_total_bytes=metrics.mem_total_bytes,
         disk_used_percent=metrics.disk_used_percent,
@@ -372,7 +391,7 @@ def _calendar_entries(
     for event in events:
         start = event.start.astimezone(tz)
         day_offset = (start.date() - today.date()).days
-        if not 0 <= day_offset < TIMELINE_DAYS:
+        if not -TIMELINE_PAST_DAYS <= day_offset <= TIMELINE_FUTURE_DAYS:
             continue
         finish = event.end.astimezone(tz) if event.end else None
         # An event running past midnight is clamped to its own day rather than
@@ -411,10 +430,18 @@ def build_timeline(
     """
     entries = _calendar_entries(calendar_events, tz, now_local)
     entries.sort(key=lambda item: (item.day_offset, item.start_minutes))
-    entries = entries[:MAX_TIMELINE_ENTRIES]
+    per_day: dict[int, int] = {}
+    kept: list[TimelineEntry] = []
+    for entry in entries:
+        seen = per_day.get(entry.day_offset, 0)
+        if seen >= MAX_TIMELINE_ENTRIES_PER_DAY:
+            continue
+        per_day[entry.day_offset] = seen + 1
+        kept.append(entry)
+    entries = kept
 
     days: list[TimelineDay] = []
-    for offset in range(TIMELINE_DAYS):
+    for offset in range(-TIMELINE_PAST_DAYS, TIMELINE_FUTURE_DAYS + 1):
         day = now_local + timedelta(days=offset)
         days.append(
             TimelineDay(
@@ -441,6 +468,7 @@ class StatusAssembler:
     def __init__(self, application: Application) -> None:
         self._app = application
         self._tz = ZoneInfo(application.settings.tz)
+        self._asset_version = board_asset_version()
 
     async def _calendar(
         self, window_start: datetime, window_end: datetime
@@ -525,15 +553,18 @@ class StatusAssembler:
         metrics = app.metrics.read()
 
         now_local = now.astimezone(self._tz)
-        window_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
-        window_end = window_start + timedelta(days=TIMELINE_DAYS)
+        midnight = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+        window_start = midnight - timedelta(days=TIMELINE_PAST_DAYS)
+        window_end = midnight + timedelta(days=TIMELINE_FUTURE_DAYS + 1)
         calendar, calendar_events = await self._calendar(window_start, window_end)
         timeline_days, timeline = build_timeline(now_local, self._tz, calendar_events)
         weather = await self._weather()
 
         # In the dev profile every connector is a stub, so a "completed" run
-        # means a job talked to canned data and published nothing. Listing
-        # those as activity overstates what the system is doing.
+        # means a job talked to canned data and published nothing. The board
+        # still shows that work — a screen that says "idle" while the
+        # scheduler fires every half hour is the worse lie — but every stub
+        # row is labelled, so canned activity cannot read as the real thing.
         real_jobs = app.settings.profile == "prod"
 
         alerts = build_alerts(
@@ -551,6 +582,7 @@ class StatusAssembler:
                 profile=app.settings.profile,
                 version=app.version,
                 revision=app.revision,
+                asset_version=self._asset_version,
                 uptime_seconds=(now - app.started_at).total_seconds(),
                 scheduler_paused=app.scheduler.paused,
                 display_mode=app.display_mode.mode,
@@ -562,10 +594,11 @@ class StatusAssembler:
             alerts_total=len(alerts),
             approvals=[_approval_item(approval) for approval in pending[:MAX_APPROVALS]],
             approvals_total=len(pending),
-            runs=[_run_item(run) for run in recent[:MAX_RUNS]] if real_jobs else [],
+            runs=[_run_item(run) for run in recent[:MAX_RUNS]],
             runs_note=(
                 None if real_jobs else "stub profile — scheduled jobs execute against canned data"
             ),
+            run_timeline=build_runs_timeline(app, recent, now, stub_jobs=not real_jobs),
             containers=[_container_item(status) for status in containers],
             system=_system_info(metrics),
             budget=BudgetInfo(
@@ -576,6 +609,7 @@ class StatusAssembler:
             ),
             timeline_start_hour=TIMELINE_START_HOUR,
             timeline_end_hour=TIMELINE_END_HOUR,
+            timeline_visible_days=TIMELINE_VISIBLE_DAYS,
             timeline_days=timeline_days,
             timeline=timeline,
             calendar=calendar,

@@ -45,7 +45,20 @@ class SystemMetrics:
     disk_total_bytes: int | None = None
     disk_used_bytes: int | None = None
     uptime_seconds: float | None = None
+    cpu_count: int | None = None
     wifi: WifiLink | None = None
+
+    @property
+    def load_percent(self) -> float | None:
+        """Load as a share of the machine's cores.
+
+        A bare load average only means something once you know how many
+        cores it is spread over: 3.5 is a quiet Pi 5 to anyone who knows it
+        has four, and an emergency to anyone who does not.
+        """
+        if self.load_1 is None or not self.cpu_count:
+            return None
+        return 100.0 * self.load_1 / self.cpu_count
 
     @property
     def mem_used_percent(self) -> float | None:
@@ -144,11 +157,13 @@ class SystemMetricsReader:
         thermal_zone: Path = Path("/sys/class/thermal/thermal_zone0"),
         disk: Path = Path("/"),
         interface: str = "wlan0",
+        cpu_count: int | None = None,
     ) -> None:
         self._proc = proc
         self._thermal_zone = thermal_zone
         self._disk = disk
         self._interface = interface
+        self._cpu_count = cpu_count if cpu_count is not None else os.cpu_count()
 
     def read(self) -> SystemMetrics:
         total, available = self._meminfo()
@@ -164,6 +179,7 @@ class SystemMetricsReader:
             disk_total_bytes=disk_total,
             disk_used_bytes=disk_used,
             uptime_seconds=self._uptime(),
+            cpu_count=self._cpu_count,
             wifi=self._wifi(),
         )
 

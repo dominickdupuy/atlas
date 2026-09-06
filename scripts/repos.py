@@ -229,6 +229,30 @@ class Log:
         print(line, flush=True)
 
 
+SUMMARY_MARKER = "atlas-summary"
+
+
+def summary_from_log(lines: list[str]) -> dict | None:
+    """The figures a job reported for the board, or None.
+
+    A job that wants numbers on the board prints one line: the marker, then a
+    JSON object (finance's autoreview does). The last such line wins, so a
+    job may report progress and then a final tally. Anything unparseable is
+    ignored rather than failing the run over a display detail.
+    """
+    for line in reversed(lines):
+        _, found, payload = line.partition(SUMMARY_MARKER + " ")
+        if not found:
+            continue
+        try:
+            doc = json.loads(payload)
+        except ValueError:
+            continue
+        if isinstance(doc, dict):
+            return doc
+    return None
+
+
 def run_job(repo: dict, trigger: str = "manual") -> int:
     """One logged run: update, set up if needed, execute, summarise."""
     name = repo["name"]
@@ -259,13 +283,14 @@ def run_job(repo: dict, trigger: str = "manual") -> int:
         code = 1
     finally:
         finished = time.time()
-        tail = log.path.read_text(encoding="utf-8", errors="replace").splitlines()[-15:]
+        lines = log.path.read_text(encoding="utf-8", errors="replace").splitlines()
         summary.update({
             "finished": datetime.fromtimestamp(finished).isoformat(timespec="seconds"),
             "duration_seconds": round(finished - started, 1),
             "exit": code,
             "status": "ok" if code == 0 else "failed",
-            "tail": tail,
+            "tail": lines[-15:],
+            "summary": summary_from_log(lines),
         })
         write_json(state_path(name), summary)
         log.file.close()

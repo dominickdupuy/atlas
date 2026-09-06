@@ -26,7 +26,7 @@ async def board(panels: Annotated[PanelRenderer, Depends(get_panels)]) -> HTMLRe
 
 @router.get("/dashboard", response_class=HTMLResponse)
 async def ops_board(panels: Annotated[PanelRenderer, Depends(get_panels)]) -> HTMLResponse:
-    return HTMLResponse(panels.render_board())
+    return HTMLResponse(panels.render_board(), headers={"Cache-Control": "no-store"})
 
 
 @router.get("/partials/{panel}", response_class=HTMLResponse)

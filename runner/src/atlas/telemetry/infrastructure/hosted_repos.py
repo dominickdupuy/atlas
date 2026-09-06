@@ -22,7 +22,7 @@ from __future__ import annotations
 import json
 import logging
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -35,6 +35,16 @@ _QUEUE_FILE = "queue.json"
 _SCHEDULED_KINDS = ("job", "both")
 
 
+def _figures(raw: object) -> dict[str, int]:
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        str(key): value
+        for key, value in raw.items()
+        if isinstance(value, int) and not isinstance(value, bool)
+    }
+
+
 @dataclass(frozen=True)
 class HostedRepoRun:
     """The last run of one repo, from /var/lib/atlas-repos/<name>.json."""
@@ -45,12 +55,15 @@ class HostedRepoRun:
     started: datetime | None
     duration_seconds: float | None
     exit_code: int | None
+    summary: dict[str, int] = field(default_factory=dict)
+    """Figures the job printed for the board (repos.py's `atlas-summary` line):
+    integer-valued only, so a job cannot push prose onto the screen."""
 
     @property
     def failed(self) -> bool:
-        # repos.py writes exactly "ok" or "failed"; treat anything unknown as
+        # repos.py writes "running", "ok", or "failed"; treat anything unknown as
         # failed rather than quietly drawing it green.
-        return self.status != "ok"
+        return self.status not in ("ok", "running")
 
 
 @dataclass(frozen=True)
@@ -110,6 +123,7 @@ class HostedRepoReader:
                     started=self._aware(state.get("started")),
                     duration_seconds=float(duration) if isinstance(duration, int | float) else None,
                     exit_code=exit_code if isinstance(exit_code, int) else None,
+                    summary=_figures(state.get("summary")),
                 )
             )
         return runs

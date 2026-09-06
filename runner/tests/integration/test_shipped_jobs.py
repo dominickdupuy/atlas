@@ -18,7 +18,9 @@ def test_shipped_jobs_validate() -> None:
     catalog = JobCatalog(YamlJobDefinitionSource(REPO_JOBS))
     catalog.load()
     ids = sorted(job.id for job in catalog.all_jobs)
-    assert ids == ["calendar-today", "conflict-finder", "morning-briefing"]
+    # The calendar and briefing jobs were retired on 2026-09-05; the board's
+    # calendar reads the published .ics feed directly and needs no job.
+    assert ids == ["conflict-finder"]
     # The tier-3 example ships disabled (spec §10: riskiest capability last).
     by_id = {str(job.id): job for job in catalog.all_jobs}
     assert by_id["conflict-finder"].enabled is False

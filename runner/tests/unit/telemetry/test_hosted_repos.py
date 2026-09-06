@@ -85,6 +85,13 @@ def test_unknown_status_counts_as_failed(tmp_path: Path) -> None:
     assert reader.last_runs()[0].failed is True
 
 
+def test_running_repo_is_not_a_failure(tmp_path: Path) -> None:
+    reader = _reader(tmp_path)
+    _write_state(tmp_path, "finance", status="running")
+
+    assert reader.last_runs()[0].failed is False
+
+
 def test_upcoming_includes_the_next_cron_fire(tmp_path: Path) -> None:
     now = datetime(2026, 9, 5, 12, 0, tzinfo=UTC)
 
@@ -143,3 +150,25 @@ def test_corrupt_state_file_is_skipped(tmp_path: Path) -> None:
     (tmp_path / "state" / "finance.json").write_text("{ truncated", encoding="utf-8")
 
     assert reader.last_runs() == []
+
+
+def test_a_run_carries_the_figures_the_job_reported(tmp_path: Path) -> None:
+    """repos.py stores the job's `atlas-summary` object under "summary".
+    Only integer figures reach the board; a job cannot push text onto it."""
+    reader = _reader(tmp_path)
+    _write_state(
+        tmp_path,
+        "finance",
+        summary={"transactions": 1204, "uncategorized": 2, "note": "prose", "ok": True},
+    )
+
+    run = reader.last_runs()[0]
+
+    assert run.summary == {"transactions": 1204, "uncategorized": 2}
+
+
+def test_a_run_without_a_summary_has_no_figures(tmp_path: Path) -> None:
+    reader = _reader(tmp_path)
+    _write_state(tmp_path, "finance", summary=None)
+
+    assert reader.last_runs()[0].summary == {}

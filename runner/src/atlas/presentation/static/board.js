@@ -1,8 +1,21 @@
 /*
  * atlas ops board client — implementation of the "Atlas Board" design canvas.
  *
- * Output only (D11): no handlers, no navigation, nothing focusable. The
- * design's DCLogic class is translated to plain DOM here — D17 rules out a
+ * Output only (D11) in the sense that matters: no button, form, input or
+ * link exists, nothing is focusable, and no workflow requires acting on the
+ * screen. There is now exactly one handler — a keydown listener for the desk
+ * dial, which pans the calendar between days. It is an input device sitting
+ * next to the board, not on it, and it can only change which days are drawn:
+ * nothing it does has a consequence, and the view returns to today on its own
+ * (DAY_VIEW_IDLE_MS) so an abandoned board never keeps showing a stale day.
+ * Nothing labels the panned state — the day columns carry their own dates, and
+ * TODAY appears on no column once you have panned away from it.
+ *
+ * The header draws that dial (see "the drawn desk dial" below) so a press has
+ * somewhere to land: keys light, the ring turns. The drawing is output like
+ * everything else here — it mirrors the hardware and cannot be operated.
+ *
+ * The design's DCLogic class is translated to plain DOM here — D17 rules out a
  * build step or a Node toolchain on the Pi, and the canvas runtime
  * (support.js) is React-based authoring tooling, not something to ship.
  *
@@ -37,8 +50,44 @@
   // fits; below it, label and detail share one line and ellipsis.
   var TALL_EVENT_PCT = 7.0;
 
+  // The desk dial (LifeSmart ColoPlay) sends these as Shift+Alt+<digit>,
+  // one keypress per detent. Swap the two if the dial pans the wrong way.
+  var DIAL_BACK = "Digit5";
+  var DIAL_FORWARD = "Digit6";
+  // Its four corner keys, under the same Shift+Alt prefix. The device numbers
+  // them in reading order — top-left, top-right, bottom-left, bottom-right —
+  // not clockwise, which is what the drawn keys' data-key attributes carry.
+  // If a key turns out to send something else, press it: an unmapped Shift+Alt
+  // combination prints its code on the drawn dial's screen, which is where
+  // the value to put in this list comes from.
+  var DECK_KEY_CODES = ["Digit1", "Digit2", "Digit3", "Digit4"];
+  // The top-left key selects the screen already on the wall, so it stays lit.
+  var DECK_HOME_KEY = 1;
+  // Long enough to register as a press from across the desk, short enough
+  // that a fast series of presses still shows every one of them.
+  var DECK_PRESS_MS = 260;
+  // How long a key's own report holds the dial screen before the display mode
+  // takes it back.
+  var DECK_SCREEN_MS = 1600;
+  // Degrees of ring per detent. A third of a turn: visible at 76px, and never
+  // so far that two quick detents look like one.
+  var DECK_DETENT_DEG = 34;
+  // Long enough to read a day you panned to, short enough that a board left
+  // alone is showing today again before anyone next glances at it.
+  var DAY_VIEW_IDLE_MS = 45000;
+
   var lastSuccessAt = null;
   var lastSnapshot = null;
+  // Offset of the leftmost day column. 0 is today; the dial moves it within
+  // whatever range the server served.
+  var dayView = 0;
+  var dayViewTimer = null;
+  // The drawn dial's own state: which of its screen the mode wants, whose
+  // message is holding that screen, and how far the ring has been turned.
+  var deckModeLabel = "INIT";
+  var deckScreenTimer = null;
+  var deckDialTimer = null;
+  var deckRingAngle = 0;
 
   function $(id) {
     return document.getElementById(id);
@@ -139,13 +188,76 @@
     text($("build"), "v" + (svc.version || "?") + " · " + (svc.revision || "?"));
 
     var mode = svc.display_mode || "OPS";
-    var pill = $("mode-pill");
-    pill.setAttribute("data-mode", mode);
+    $("deck").setAttribute("data-mode", mode);
     var label = mode.replace(/_/g, " ");
-    if (mode === "APPROVAL_PENDING" && s.approvals_total) {
-      label = s.approvals_total + " AWAITING APPROVAL";
+    if (mode === "APPROVAL_PENDING") {
+      // No wording survives a 27px face at a legible size, and the amber fill
+      // and the pulse already say "approval" from across the room. So the
+      // screen carries the one thing they cannot: how many.
+      label = s.approvals_total ? String(s.approvals_total) : "!";
     }
-    text($("mode-text"), label);
+    deckModeLabel = label;
+    // A key's report owns the screen while it lasts; a poll landing under it
+    // must not blank it out mid-message.
+    if (deckScreenTimer === null) deckScreenText(label);
+  }
+
+  // --- the drawn desk dial ------------------------------------------------
+
+  /*
+   * The header's model of the LifeSmart ColoPlay standing beside the monitor.
+   * It is a mirror: it lights up because the hardware was pressed, and it
+   * cannot be pressed itself. Its whole job is to answer, from across the
+   * room, the question the hardware cannot — did that press arrive?
+   */
+
+  /*
+   * Size the screen's type to what is going on it. The face is a 27px circle
+   * with no room for an ellipsis, so the choice is between smaller type and
+   * a clipped word, and a clipped word says nothing. Lines wrap on their own;
+   * what has to fit across the face is the longest single word. The smallest
+   * step is below reading size and exists only for the key-code diagnostic,
+   * which is read from a foot away and never during normal operation.
+   */
+  function deckScreenText(label) {
+    var node = $("mode-text");
+    text(node, label);
+    var longest = 0;
+    label.split(/\s+/).forEach(function (word) {
+      if (word.length > longest) longest = word.length;
+    });
+    node.setAttribute("data-fit", longest <= 3 ? "full" : longest <= 6 ? "tight" : "min");
+  }
+
+  /* Lend the screen to a message, then hand it back to the display mode. */
+  function deckSay(label) {
+    if (deckScreenTimer !== null) clearTimeout(deckScreenTimer);
+    deckScreenText(label);
+    deckScreenTimer = setTimeout(function () {
+      deckScreenTimer = null;
+      deckScreenText(deckModeLabel);
+    }, DECK_SCREEN_MS);
+  }
+
+  function deckPressKey(key) {
+    var node = document.querySelector('.deck-key[data-key="' + key + '"]');
+    if (node === null) return;
+    node.setAttribute("data-press", "true");
+    setTimeout(function () {
+      node.removeAttribute("data-press");
+    }, DECK_PRESS_MS);
+  }
+
+  function deckTurn(step) {
+    var dial = $("deck-dial");
+    deckRingAngle += step * DECK_DETENT_DEG;
+    $("deck-ring").style.transform = "rotate(" + deckRingAngle + "deg)";
+    dial.setAttribute("data-turn", "true");
+    if (deckDialTimer !== null) clearTimeout(deckDialTimer);
+    deckDialTimer = setTimeout(function () {
+      deckDialTimer = null;
+      dial.removeAttribute("data-turn");
+    }, DECK_PRESS_MS);
   }
 
   function renderClock() {
@@ -219,6 +331,94 @@
 
   // --- timeline -----------------------------------------------------------
 
+  // --- day panning --------------------------------------------------------
+
+  function dayBounds(allDays, visibleCount) {
+    if (!allDays.length) return { min: 0, max: 0 };
+    var first = allDays[0].day_offset;
+    var last = allDays[allDays.length - 1].day_offset;
+    // The leftmost column can go no further right than the last full window,
+    // so the rightmost reachable day is exactly the last one served.
+    return { min: first, max: Math.max(first, last - visibleCount + 1) };
+  }
+
+  function armDayViewReset() {
+    if (dayViewTimer !== null) clearTimeout(dayViewTimer);
+    dayViewTimer = setTimeout(function () {
+      dayViewTimer = null;
+      if (dayView === 0) return;
+      dayView = 0;
+      if (lastSnapshot !== null) renderTimeline(lastSnapshot);
+    }, DAY_VIEW_IDLE_MS);
+  }
+
+  function shiftDays(step) {
+    if (lastSnapshot === null) return;
+    var visibleCount = lastSnapshot.timeline_visible_days || 3;
+    var bounds = dayBounds(lastSnapshot.timeline_days || [], visibleCount);
+    var next = Math.min(bounds.max, Math.max(bounds.min, dayView + step));
+    if (next !== dayView) {
+      dayView = next;
+      renderTimeline(lastSnapshot);
+    }
+    // Re-arm even when the dial hit the end stop: the user is still there.
+    armDayViewReset();
+  }
+
+  /* A compact rendering of a keystroke, for the dial's 48px screen: modifier
+     initials, then the code with its Digit/Key/Numpad prefix dropped. Shift+
+     Alt+Digit3 reads "AS 3". */
+  function describeKey(e) {
+    var mods = "";
+    if (e.ctrlKey) mods += "C";
+    if (e.altKey) mods += "A";
+    if (e.shiftKey) mods += "S";
+    if (e.metaKey) mods += "M";
+    var code = (e.code || e.key || "?").replace(/^(Digit|Key|Numpad|Arrow)/, "");
+    return mods === "" ? code : mods + " " + code;
+  }
+
+  function onDialKey(e) {
+    var prefixed = e.shiftKey && e.altKey && !e.ctrlKey && !e.metaKey;
+
+    if (prefixed) {
+      var step = e.code === DIAL_BACK ? -1 : e.code === DIAL_FORWARD ? 1 : 0;
+      if (step !== 0) {
+        e.preventDefault();
+        deckTurn(step);
+        shiftDays(step);
+        return;
+      }
+
+      var key = DECK_KEY_CODES.indexOf(e.code) + 1;
+      if (key > 0) {
+        e.preventDefault();
+        deckPressKey(key);
+        // Only the top-left key has a screen behind it. The other three say
+        // they arrived and nothing more, rather than pretending to switch to
+        // something that does not exist yet.
+        if (key !== DECK_HOME_KEY) deckSay("K" + key);
+        return;
+      }
+    }
+
+    // Everything else lands here. The dial is the only input device in this
+    // room, so a key this file does not recognise is one of its keys sending
+    // something not listed above — and a key that reports nothing is
+    // indistinguishable from a key that is not bound on the device at all.
+    // Printing the keystroke on the dial's own screen collapses that
+    // difference: what appears is what to map, and nothing appearing means
+    // the press never left the hardware.
+    //
+    // Held modifiers arrive as keydowns of their own; reporting those would
+    // bury the keystroke they belong to under "SHIFTLEFT".
+    if (/^(Shift|Alt|Control|Meta|CapsLock)/.test(e.code || "")) return;
+    // The reload keys stay the browser's: this board is refreshed by hand
+    // often enough that swallowing them would cost more than it explains.
+    if (e.code === "F5" || (e.ctrlKey && e.code === "KeyR")) return;
+    deckSay(describeKey(e));
+  }
+
   function renderTimeline(s) {
     var startHour = s.timeline_start_hour;
     var endHour = s.timeline_end_hour;
@@ -226,13 +426,31 @@
     var span = hours * 60;
     var hourPct = 100 / hours;
 
+    // Which days are on screen. The server sends a fortnight either side of
+    // today; the board draws a window of it, positioned by the dial.
+    var allDays = s.timeline_days || [];
+    var visibleCount = s.timeline_visible_days || 3;
+    var bounds = dayBounds(allDays, visibleCount);
+    dayView = Math.min(bounds.max, Math.max(bounds.min, dayView));
+    var days = allDays.filter(function (day) {
+      return day.day_offset >= dayView && day.day_offset < dayView + visibleCount;
+    });
+
     var cal = s.calendar || {};
     text($("timeline-title"), cal.configured ? "CALENDAR" : "SCHEDULE");
     var source = cal.detail || "atlas jobs only";
     if (cal.configured && cal.synced_at) {
       // Say when, not just what: a published feed can lag by hours, and the
       // board should never imply it is live when it is not.
-      source = cal.event_count + " events · synced " + hhmm(cal.synced_at);
+      //
+      // Count the days on screen, not the whole fetched range. The snapshot
+      // carries a fortnight so the dial can pan without refetching, and
+      // printing that total beside three columns would overstate the day.
+      var shown = days.reduce(function (total, day) {
+        return total + day.entry_count;
+      }, 0);
+      source = shown + (shown === 1 ? " event · synced " : " events · synced ") +
+        hhmm(cal.synced_at);
       if (cal.error) source += " · refresh failing";
     }
     text($("timeline-source"), source);
@@ -252,7 +470,6 @@
     }
 
     // day headers
-    var days = s.timeline_days || [];
     var daybar = $("daybar");
     clear(daybar);
     days.forEach(function (day) {
@@ -601,7 +818,7 @@
     var band = uvBand(day.uv_index_max);
     metrics.appendChild(
       metric(
-        "uv index",
+        "uv",
         day.uv_index_max === null || day.uv_index_max === undefined
           ? "—"
           : day.uv_index_max.toFixed(1),
@@ -609,8 +826,8 @@
         band[0]
       )
     );
-    metrics.appendChild(metric("precip chance", day.precipitation_probability_pct + "%"));
-    metrics.appendChild(metric("rainfall", day.precipitation_mm.toFixed(1), "mm"));
+    metrics.appendChild(metric("precip", day.precipitation_probability_pct + "%"));
+    metrics.appendChild(metric("rain", day.precipitation_mm.toFixed(1), "mm"));
     box.appendChild(metrics);
 
     if (day.hourly && day.hourly.length) {
@@ -652,54 +869,68 @@
 
   // --- runs ---------------------------------------------------------------
 
+  function runWhen(iso) {
+    if (!iso) return "—";
+    var at = new Date(iso);
+    var today = new Date();
+    var prefix = at.toDateString() === today.toDateString()
+      ? "" : at.toLocaleDateString([], { weekday: "short" }) + " ";
+    return prefix + hhmm(iso);
+  }
+
   function renderRuns(s) {
     var box = $("runs");
     clear(box);
-    var runs = s.runs || [];
+    var timeline = s.run_timeline || {};
+    var pending = timeline.pending || [];
+    var history = timeline.history || [];
+    var rows = pending.concat(history);
+    var pendingTotal = timeline.pending_total || 0;
+    var historyTotal = timeline.history_total || 0;
+    var total = pendingTotal + historyTotal;
     var note = $("runs-note");
-    note.hidden = !s.runs_note;
+    note.hidden = !s.runs_note || total > 0;
     if (s.runs_note) text(note, s.runs_note);
 
-    text($("runs-source"), runs.length ? "last " + runs.length : "idle");
+    text($("runs-source"), total
+      ? pendingTotal + " pending · " + historyTotal + " recent" : "idle");
 
-    if (!runs.length) {
-      box.appendChild(el("p", "empty", s.runs_note ? "nothing running" : "no runs recorded"));
+    if (!rows.length) {
+      box.appendChild(el("p", "empty", "nothing queued or run yet"));
       return;
     }
 
-    runs.forEach(function (run) {
+    rows.forEach(function (run) {
       var row = el("div", "run");
       row.setAttribute("data-state", run.state);
-      row.appendChild(el("span", "run-job", run.job_id));
+      var job = el("span", "run-job", run.name);
+      job.appendChild(el("span", "run-origin", run.origin));
+      row.appendChild(job);
       row.appendChild(el("span", "run-state", run.state.replace(/_/g, " ").toUpperCase()));
-
-      var detail = run.error
-        ? run.error
-        : "tier " + run.tier + " · " + run.mode + " · " + duration(run.duration_seconds);
-      row.appendChild(el("span", "run-detail", detail));
-      row.appendChild(el("span", "run-at", hhmm(run.finished_at || run.started_at)));
+      row.appendChild(el("span", "run-detail", run.detail));
+      row.appendChild(el("span", "run-at", runWhen(run.when)));
       box.appendChild(row);
     });
 
-    trimToFit(box, runs.length);
+    trimToFit(box, total);
   }
 
-  /*
-   * The rail's height changes with whether the attention band is showing, so
-   * how many rows fit is not knowable server-side. Drop whole rows until the
-   * list fits and report the count: a row sliced in half reads as a broken
-   * board, and D11 rules out scrolling to reach the rest.
-   */
+  // Count both server-capped entries and whole rows removed to fit this screen.
   function trimToFit(box, total) {
-    var note = null;
+    var note = el("p", "empty", "");
     var guard = 0;
-    while (box.scrollHeight > box.clientHeight && box.children.length > 1 && guard++ < 50) {
-      if (note) box.removeChild(note);
-      var last = box.children[box.children.length - 1];
-      box.removeChild(last);
-      var hidden = total - box.children.length;
-      note = el("p", "empty", "+ " + hidden + " more");
-      box.appendChild(note);
+    for (;;) {
+      var rows = box.querySelectorAll(".run");
+      if (total - rows.length > 0) {
+        text(note, "+ " + (total - rows.length) + " more");
+        box.appendChild(note); // appendChild moves it back to the end
+      } else if (note.parentNode === box) {
+        box.removeChild(note);
+      }
+      // Keeping the last row is the point: a panel showing nothing but
+      // "+ 6 more" tells you less than one run and an honest count.
+      if (box.scrollHeight <= box.clientHeight || rows.length <= 1 || guard++ >= 50) return;
+      box.removeChild(rows[rows.length - 1]);
     }
   }
 
@@ -719,44 +950,25 @@
     clear(grid);
     var svc = s.service || {};
     var sys = s.system || {};
-    var wifi = sys.wifi || {};
-    var containers = {};
-    (s.containers || []).forEach(function (c) {
-      containers[c.name] = c;
-    });
 
     text(
       $("system-source"),
       "profile: " + (svc.profile || "?") + " · up " + uptime(svc.uptime_seconds)
     );
 
-    sysrow(grid, "scheduler", svc.scheduler_paused ? "paused" : "running",
-      svc.scheduler_paused ? "crit" : "ok");
-    sysrow(grid, "jobs enabled", (svc.jobs_enabled || 0) + " of " + (svc.jobs_total || 0));
-
-    ["homeassistant", "mosquitto"].forEach(function (name) {
-      var c = containers[name];
-      sysrow(grid, name, c ? (c.reachable ? "reachable" : "DOWN") : "—",
-        c ? (c.reachable ? "ok" : "crit") : "");
-    });
-
     sysrow(grid, "cpu temp",
       sys.cpu_temp_c === null || sys.cpu_temp_c === undefined
         ? "—" : sys.cpu_temp_c.toFixed(1) + "°C",
       level(sys.cpu_temp_c, 70, 80));
-    sysrow(grid, "load",
-      sys.load_1 === null || sys.load_1 === undefined ? "—" : sys.load_1.toFixed(2),
-      level(sys.load_1, 4, 8));
+    // 100% is every core busy, not a ceiling: the thresholds are the old
+    // load-of-4 and load-of-8 warnings restated for this machine's cores.
+    sysrow(grid, "load", pct(sys.load_percent), level(sys.load_percent, 100, 200));
     sysrow(grid, "memory",
       pct(sys.mem_used_percent) + " of " + gib(sys.mem_total_bytes),
       level(sys.mem_used_percent, 80, 92));
     sysrow(grid, "disk",
       pct(sys.disk_used_percent) + " of " + gib(sys.disk_total_bytes),
       level(sys.disk_used_percent, 80, 90));
-    sysrow(grid, "wi-fi",
-      wifi.signal_dbm === null || wifi.signal_dbm === undefined
-        ? "—" : Math.round(wifi.signal_dbm) + " dBm",
-      level(wifi.signal_dbm === null ? null : -wifi.signal_dbm, 67, 75));
     sysrow(grid, "host uptime", uptime(sys.uptime_seconds));
   }
 
@@ -839,6 +1051,12 @@
         return r.json();
       })
       .then(function (snapshot) {
+        var loadedAssets = document.documentElement.getAttribute("data-asset-version");
+        var currentAssets = snapshot.service && snapshot.service.asset_version;
+        if (loadedAssets && currentAssets && loadedAssets !== currentAssets) {
+          window.location.reload();
+          return;
+        }
         lastSnapshot = snapshot;
         lastSuccessAt = Date.now();
         render(snapshot);
@@ -856,6 +1074,7 @@
   }
 
   window.addEventListener("resize", fit);
+  window.addEventListener("keydown", onDialKey);
   fit();
   renderClock();
   refreshStaleness();

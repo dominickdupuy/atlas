@@ -180,43 +180,269 @@ body {
   gap: 26px;
 }
 
-.pill {
+/* --- the desk dial, drawn --------------------------------------------- */
+
+/*
+ * A scale model of the LifeSmart Colo Play that sits beside this monitor:
+ * a rounded-square body on a metal base, a chunky key at each corner with an
+ * LED hash on its face, and an oversized dial carrying a round screen inside
+ * a lit ring. The header used to spend this corner on a mode pill; the mode
+ * now lives on the dial's screen, where the hardware puts it.
+ *
+ * Everything here is a mirror of a device the board cannot be touched
+ * through, so nothing is focusable and nothing responds to a pointer — the
+ * lit states are driven entirely by the keys the dial sends.
+ */
+
+.deck {
+  position: relative;
+  flex: none;
+  /* Sized to the clock beside it: the time and date stack 77px tall, and a
+      device model that overran that would push the header down and take the
+      space out of the calendar below. */
+  width: 76px;
+  height: 76px;
+  border-radius: 15px;
+  background:
+    radial-gradient(78% 60% at 50% 6%, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0) 70%),
+    linear-gradient(158deg, #2a3span 0%, #161d2a 46%, #0a0e16 100%);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.26),
+    inset 0 -14px 26px rgba(0, 0, 0, 0.5),
+    0 16px 36px rgba(0, 0, 0, 0.55);
+}
+
+/* The zinc base the body sits on: a sliver of brighter metal at the foot. */
+.deck::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: -2px;
+  height: 4px;
+  border-radius: 0 0 6px 6px;
+  background: linear-gradient(180deg, rgba(180, 200, 226, 0.34), rgba(120, 140, 170, 0.06));
+}
+
+/*
+ * The keys are not four islands: on the device they are one square block
+ * quartered by a thin cross seam, each key a square with a quarter circle
+ * bitten out of its inner corner for the dial to sit in. So each key takes a
+ * quadrant of the body's inner area, rounds only the corner that meets the
+ * shell, and has the bite cut by a radial-gradient mask.
+ *
+ * The bite (KEY_CUT below, 36px) is deliberately a little tighter than the
+ * dial's outer edge with its ring (38px): the dial covers the cut edge, so
+ * there is no gap of body colour ringing it and no cut corner peeking out
+ * from under the ring.
+ */
+.deck-key {
+  position: absolute;
+  width: 31px;
+  height: 31px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.03));
+  /* The edge is what makes four keys out of one plate: a 4px seam alone is
+     too close to the body's own colour to read at this size. The mask cuts
+     this border along the bite, where the dial covers the raw end. */
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 2px 6px rgba(0, 0, 0, 0.55);
+  /* Short enough that a detent-fast press still reads as a press. */
+  transition: transform 90ms ease, box-shadow 90ms ease, background 180ms ease;
+}
+
+/* Outer corner follows the shell (body radius less its 9px inset); the two
+   corners along the seam take a keycap's small break; the inner one is cut
+   away by the mask and its radius never renders. */
+.deck-key[data-pos="tl"] {
+  top: 5px;
+  left: 5px;
+  border-radius: 10px 3px 0 3px;
+  mask: radial-gradient(circle at 100% 100%, transparent 0 18.5px, #000 19.5px);
+  -webkit-mask: radial-gradient(circle at 100% 100%, transparent 0 18.5px, #000 19.5px);
+}
+
+.deck-key[data-pos="tr"] {
+  top: 5px;
+  right: 5px;
+  border-radius: 3px 10px 3px 0;
+  mask: radial-gradient(circle at 0 100%, transparent 0 18.5px, #000 19.5px);
+  -webkit-mask: radial-gradient(circle at 0 100%, transparent 0 18.5px, #000 19.5px);
+}
+
+.deck-key[data-pos="bl"] {
+  bottom: 5px;
+  left: 5px;
+  border-radius: 3px 0 3px 10px;
+  mask: radial-gradient(circle at 100% 0, transparent 0 18.5px, #000 19.5px);
+  -webkit-mask: radial-gradient(circle at 100% 0, transparent 0 18.5px, #000 19.5px);
+}
+
+.deck-key[data-pos="br"] {
+  bottom: 5px;
+  right: 5px;
+  border-radius: 0 3px 10px 3px;
+  mask: radial-gradient(circle at 0 0, transparent 0 18.5px, #000 19.5px);
+  -webkit-mask: radial-gradient(circle at 0 0, transparent 0 18.5px, #000 19.5px);
+}
+
+/* The LED hash on each key's face, out by the shell where the device puts it
+   rather than in at the seam, where the dial would sit on top of it. */
+.deck-led {
+  position: absolute;
+  width: 9px;
+  height: 2px;
+  border-radius: 1.5px;
+  background: rgba(226, 238, 252, 0.16);
+  transition: background 180ms ease, box-shadow 180ms ease;
+}
+
+.deck-key[data-pos="tl"] .deck-led { top: 6px; left: 6px; }
+.deck-key[data-pos="tr"] .deck-led { top: 6px; right: 6px; }
+.deck-key[data-pos="bl"] .deck-led { bottom: 6px; left: 6px; }
+.deck-key[data-pos="br"] .deck-led { bottom: 6px; right: 6px; }
+
+/* Lit: the key whose screen is the one on the wall. */
+.deck-key[data-active="true"] .deck-led {
+  background: var(--cyan);
+  box-shadow: 0 0 9px rgba(100, 210, 255, 0.95);
+}
+
+/* Held: the key sinks and its hash goes to white. Travel only, no scale —
+   scaling would carry the mask with it and swing the bite out from under the
+   dial, opening a sliver along the cut. */
+.deck-key[data-press="true"] {
+  transform: translateY(1px);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.08));
+  box-shadow: inset 0 2px 7px rgba(0, 0, 0, 0.6), 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+.deck-key[data-press="true"] .deck-led {
+  background: #ffffff;
+  box-shadow: 0 0 14px rgba(255, 255, 255, 0.95);
+}
+
+.deck-dial {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  /* Oversized, as on the device — it overlaps the keys' inner corners by a
+     few pixels, which is the look, but not so far that the keys stop reading
+     as four separate keys. */
+  width: 39px;
+  height: 39px;
+  margin: -19.5px 0 0 -19.5px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #39445a 0%, #1b2231 62%, #10141d 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    0 6px 14px rgba(0, 0, 0, 0.55);
+  transition: box-shadow 140ms ease;
+}
+
+/* Turned: the dial picks up the ring's light for as long as the detents last. */
+.deck-dial[data-turn="true"] {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    0 0 10px rgba(100, 210, 255, 0.55),
+    0 6px 14px rgba(0, 0, 0, 0.55);
+}
+
+/* The multicolour ring around the dial. One bright arc, so that rotating it
+   by a fixed angle per detent is legible as rotation rather than as a blink. */
+.deck-ring {
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    rgba(100, 210, 255, 0.95) 0deg,
+    rgba(191, 90, 242, 0.8) 46deg,
+    rgba(120, 140, 200, 0.16) 110deg,
+    rgba(120, 140, 200, 0.14) 300deg,
+    rgba(100, 210, 255, 0.95) 360deg
+  );
+  filter: blur(0.4px);
+  transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* The knurled collar, drawn as a repeating spoke pattern over the ring's
+   inner edge so the dial reads as something you grip. */
+.deck-knurl {
+  position: absolute;
+  inset: 2px;
+  border-radius: 50%;
+  background:
+    repeating-conic-gradient(
+      from 0deg,
+      rgba(255, 255, 255, 0.11) 0deg 3deg,
+      rgba(0, 0, 0, 0.22) 3deg 6deg
+    );
+  mask: radial-gradient(circle, transparent 62%, #000 66%, #000 100%);
+  -webkit-mask: radial-gradient(circle, transparent 62%, #000 66%, #000 100%);
+}
+
+.deck-screen {
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  overflow: hidden;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 9px 18px 9px 14px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.07);
-  border: 1px solid rgba(255, 255, 255, 0.13);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 10px 30px rgba(0, 0, 0, 0.4);
-  backdrop-filter: var(--glass-blur);
+  justify-content: center;
+  text-align: center;
+  padding: 0 3px;
+  background: radial-gradient(circle at 50% 26%, #12253a 0%, #060b13 72%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.7);
+  transition: background 220ms ease, border-color 220ms ease;
 }
 
-.pill-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--cyan);
-  box-shadow: 0 0 12px rgba(100, 210, 255, 0.9);
-}
-
-.pill-text {
-  font-size: 15px;
+.deck-screen-text {
+  font-size: 8px;
   font-weight: 600;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.06em;
+  line-height: 1.1;
+  color: var(--ink);
+  transition: color 220ms ease;
 }
 
-/* The design's pill carries the display mode; APPROVAL_PENDING is the one
-   state that must read across a room, so it takes the whole pill amber. */
-.pill[data-mode="APPROVAL_PENDING"] {
-  background: rgba(255, 159, 10, 0.9);
-  border-color: rgba(255, 159, 10, 0.9);
+/* Three steps, chosen in deckScreenText() by the longest word in the label:
+   "OPS" gets the full size, "3 TO APPROVE" steps down and wraps, "STARTING"
+   steps down again. On a face this size, unreadable and absent are the same
+   thing, so nothing here is ever allowed to clip. */
+.deck-screen-text[data-fit="tight"] {
+  font-size: 6px;
+  letter-spacing: 0.02em;
+}
+
+.deck-screen-text[data-fit="min"] {
+  font-size: 4.5px;
+  letter-spacing: 0.01em;
+}
+
+/* The one state that must read across a room takes the whole screen amber
+   and pulses the dial, exactly as the pill used to take the whole pill. */
+.deck[data-mode="APPROVAL_PENDING"] .deck-screen {
+  background: radial-gradient(circle at 50% 26%, #ffca69 0%, #ff9f0a 78%);
+  border-color: rgba(255, 159, 10, 0.95);
+}
+
+.deck[data-mode="APPROVAL_PENDING"] .deck-screen-text {
   color: #140c02;
 }
 
-.pill[data-mode="APPROVAL_PENDING"] .pill-dot {
-  background: #140c02;
-  box-shadow: none;
+.deck[data-mode="APPROVAL_PENDING"] .deck-dial {
+  animation: deck-alert 1.8s ease-in-out infinite;
+}
+
+@keyframes deck-alert {
+  0%, 100% {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 0 0 rgba(255, 159, 10, 0);
+  }
+  50% {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 0 12px rgba(255, 159, 10, 0.8);
+  }
 }
 
 .clockwrap {
@@ -373,7 +599,7 @@ body {
 /* Everything below is, by definition, no longer known to be true. */
 body[data-stale="true"] .main,
 body[data-stale="true"] .attention,
-body[data-stale="true"] .head-right .pill {
+body[data-stale="true"] .head-right .deck {
   opacity: 0.42;
   filter: grayscale(0.75);
 }
@@ -863,36 +1089,42 @@ body[data-stale="true"] .head-right .pill {
   gap: 8px;
 }
 
+/* Label beside the value rather than above it. Two of these stacks sit
+   above the Runs panel, so every line spent here is a run not shown. */
 .wx-metric {
   flex: 1;
-  border-radius: 9px;
-  padding: 8px 10px;
+  border-radius: 8px;
+  padding: 4px 9px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
 }
 
 .wx-metric dt {
-  font-size: 11px;
-  letter-spacing: 0.14em;
+  font-size: 10px;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--ink-45);
+  white-space: nowrap;
 }
 
 .wx-metric dd {
   margin: 0;
-  font-size: 19px;
+  font-size: 16px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .wx-metric dd small {
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 500;
   color: var(--ink-50);
-  margin-left: 5px;
+  margin-left: 3px;
 }
 
 .wx-metric dd[data-uv="high"] {
@@ -1044,30 +1276,51 @@ body[data-stale="true"] .head-right .pill {
 
 /* --- runs ----------------------------------------------------------------- */
 
+/* One column. A run's detail now carries figures ("1,204 transactions ·
+   2 uncategorized"), which need the full rail width to read; trimToFit()
+   below hides whole rows rather than letting them squeeze. */
 .runs {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 1fr;
+  align-content: start;
   min-height: 0;
   overflow: hidden;
+}
+
+/* Browser-default paragraph margins can consume the whole short Runs rail
+   when the overflow count is added, hiding even its first queued entry. */
+.runs > .empty {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 3px 0;
+  font-size: 12px;
+  flex: none;
 }
 
 .run {
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: 3px 12px;
+  gap: 4px 12px;
   align-items: center;
-  padding: 9px 0;
+  padding: 10px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-.run:last-child {
-  border-bottom: 0;
-}
-
 .run-job {
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 600;
   color: var(--cyan);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-origin {
+  margin-left: 8px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--ink-45);
+  text-transform: uppercase;
 }
 
 .run-state {
@@ -1093,13 +1346,14 @@ body[data-stale="true"] .head-right .pill {
   color: var(--red-text);
 }
 
-.run[data-state="awaiting_approval"] .run-state {
+.run[data-state="awaiting_approval"] .run-state,
+.run[data-state="queued"] .run-state {
   background: rgba(210, 153, 34, 0.2);
   color: var(--amber-text);
 }
 
 .run-detail {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--ink-45);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1113,7 +1367,7 @@ body[data-stale="true"] .head-right .pill {
 
 .run-at {
   justify-self: end;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--ink-42);
   font-variant-numeric: tabular-nums;
 }

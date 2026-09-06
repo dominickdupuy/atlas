@@ -19,7 +19,9 @@ from atlas.jobs.domain.run import JobRun, RunState
 from atlas.presentation.http.status import (
     MAX_ALERTS,
     MAX_RUNS,
-    TIMELINE_DAYS,
+    TIMELINE_FUTURE_DAYS,
+    TIMELINE_PAST_DAYS,
+    TIMELINE_VISIBLE_DAYS,
 )
 from atlas.shared.ids import JobId, RunId
 from atlas.telemetry.infrastructure.service_probes import TcpServiceProbe
@@ -183,19 +185,22 @@ async def test_alerts_truncate_with_an_honest_total(
     assert body["alerts_total"] == MAX_ALERTS + 4
 
 
-async def test_stub_profile_runs_are_not_reported_as_activity(
+async def test_stub_profile_runs_are_reported_but_labelled_as_canned(
     client: AsyncClient, application: Application
 ) -> None:
     """In the dev profile every connector is a stub, so a completed run means
-    a job talked to canned data and published nothing. Listing those overstates
-    what the system is doing."""
+    a job talked to canned data. A board that reads "idle" while the scheduler
+    fires all day is the worse lie, so the runs are shown and each says stub."""
     for index in range(MAX_RUNS + 3):
         await _seed_run(application, run_id=f"run-cap-{index}", state=RunState.COMPLETED)
 
     body = (await client.get("/api/status", headers=AUTH)).json()
 
-    assert body["runs"] == []
+    assert len(body["runs"]) == MAX_RUNS
     assert body["runs_note"] is not None and "stub" in body["runs_note"]
+    history = body["run_timeline"]["history"]
+    assert [row["name"] for row in history] == ["lights-out"]
+    assert "stub" in history[0]["detail"]
 
 
 async def test_failures_still_alert_even_in_the_stub_profile(
@@ -237,7 +242,13 @@ async def test_board_is_served_and_carries_no_input_controls(client: AsyncClient
     response = await client.get("/dashboard", headers=AUTH)
 
     assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
     page = response.text
+    snapshot = (await client.get("/api/status", headers=AUTH)).json()
+    asset_version = snapshot["service"]["asset_version"]
+    assert f'data-asset-version="{asset_version}"' in page
+    assert f"/static/board.js?v={asset_version}" in page
+    assert f"/static/board.css?v={asset_version}" in page
     assert "/static/board.css" in page
     assert "/static/board.js" in page
     assert "panel-timeline" in page
@@ -287,14 +298,36 @@ async def _seed_run_at(
     )
 
 
-async def test_timeline_covers_three_days_starting_today(client: AsyncClient) -> None:
+async def test_timeline_spans_a_week_either_side_of_today(client: AsyncClient) -> None:
+    """The board draws three columns, but the dial pans a week each way, so
+    the snapshot has to carry the whole reachable range in one document."""
     body = (await client.get("/api/status", headers=AUTH)).json()
 
     days = body["timeline_days"]
-    assert len(days) == TIMELINE_DAYS
-    assert days[0]["is_today"] is True
-    assert [day["day_offset"] for day in days] == list(range(TIMELINE_DAYS))
+    offsets = [day["day_offset"] for day in days]
+    assert offsets == list(range(-TIMELINE_PAST_DAYS, TIMELINE_FUTURE_DAYS + 1))
+    assert body["timeline_visible_days"] == TIMELINE_VISIBLE_DAYS
+    assert [day["is_today"] for day in days].count(True) == 1
+    assert next(day for day in days if day["is_today"])["day_offset"] == 0
     assert body["timeline_start_hour"] < body["timeline_end_hour"]
+
+
+async def test_dial_range_is_reachable_from_a_three_day_window(
+    client: AsyncClient,
+) -> None:
+    """Panning the leftmost column to its stop must expose the last served day,
+    otherwise the far end of the range is fetched but unreachable."""
+    body = (await client.get("/api/status", headers=AUTH)).json()
+
+    offsets = [day["day_offset"] for day in body["timeline_days"]]
+    visible = body["timeline_visible_days"]
+    rightmost_window_start = offsets[-1] - visible + 1
+
+    assert rightmost_window_start >= offsets[0]
+    reachable: set[int] = set()
+    for start in range(offsets[0], rightmost_window_start + 1):
+        reachable.update(range(start, start + visible))
+    assert reachable == set(offsets)
 
 
 async def test_calendar_reports_that_it_is_not_configured(client: AsyncClient) -> None:
