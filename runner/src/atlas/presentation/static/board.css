@@ -1452,8 +1452,9 @@ body[data-stale="true"] .head-right .deck {
 .health-tiles {
   flex: none;
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr 1fr 1fr 1fr;
-  gap: 12px;
+  /* STATUS, five metric tiles, then WATCH WEAR in the top right. */
+  grid-template-columns: 1.7fr 1fr 1fr 1fr 1fr 1fr 1fr;
+  gap: 10px;
   height: 128px;
 }
 
@@ -1668,8 +1669,11 @@ body[data-stale="true"] .head-right .deck {
 
 .health-axis-label {
   fill: var(--ink-35);
-  font-size: 12px;
+  /* Small and tabular: three digits have to fit the gutter without crowding
+     the plot, and the labels must not jump width as the numbers change. */
+  font-size: 10px;
   font-variant-numeric: tabular-nums;
+  letter-spacing: -0.2px;
 }
 
 /* A night whose neighbours have no data. A two-point polyline is a line; a
@@ -1734,6 +1738,49 @@ body[data-stale="true"] .head-right .deck {
 
 .health-dot {
   fill: var(--cyan);
+}
+
+/* The sleep score's three components, side by side instead of stacked: the
+   screen's only real constraint is vertical, and three lines of "name n/m"
+   spent it on a number that reads perfectly well in a row. */
+.health-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.health-pill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--glass);
+  border: 1px solid var(--glass-edge);
+  font-size: 13px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.health-pill-name {
+  color: var(--ink-55);
+}
+
+.health-pill-value {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The component with the most to gain, marked on the pill itself rather than
+   by a trailing note. */
+.health-pill[data-lever="true"] {
+  border-color: rgba(124, 192, 255, 0.55);
+  background: rgba(124, 192, 255, 0.14);
+}
+
+.health-pill[data-lever="true"] .health-pill-name {
+  color: var(--cyan);
 }
 
 .health-zone[data-zone="1"] {

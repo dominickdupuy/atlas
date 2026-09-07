@@ -1142,7 +1142,7 @@
      could be four milliseconds or forty. Three ticks is the most this size can
      carry legibly, and the gutter is part of the declared width, so adding an
      axis never changes what a chart costs in the vertical budget. */
-  var HEALTH_AXIS_GUTTER = 38;
+  var HEALTH_AXIS_GUTTER = 26;
 
   function healthYAxis(svg, width, height, min, max, format) {
     [0, 0.5, 1].forEach(function (fraction) {
@@ -1156,7 +1156,7 @@
         })
       );
       var label = svgEl("text", {
-        x: String(HEALTH_AXIS_GUTTER - 6),
+        x: String(HEALTH_AXIS_GUTTER - 5),
         // Nudge the end labels inward so neither is half cut off by the edge.
         y: String(Math.min(height - 2, Math.max(9, y + 3))),
         class: "health-axis-label",
@@ -1329,6 +1329,44 @@
     (doc.tiles || []).forEach(function (tile) {
       host.appendChild(tileNode(tile.title, tile.value, tile.arrow, tile.state, tile.lines));
     });
+
+    host.appendChild(wearTile(doc));
+  }
+
+  /* How often the watch was actually worn, in the top right.
+
+     Every other number on this screen is only as good as this one, and the
+     screen has no other way to say so: a metric computed from four nights and
+     one computed from seven look identical once they are a figure in a tile.
+     The count is nights with a sleep record, which is what the analysis window
+     is built from -- so it is the coverage behind the sleep and heart blocks
+     rather than a general wear estimate, and the tile says so.
+
+     It never reaches ALERT. A red tile means the body needs attention; not
+     wearing a watch is a gap in the record, and colouring the two the same
+     would teach the eye to read one as the other. */
+  function wearTile(doc) {
+    var coverage = doc.coverage || {};
+    var seven = coverage.nights_with_data_7;
+    var sixty = coverage.nights_with_data_60;
+    var last = coverage.last_hr_sample_at;
+    var state = "OK";
+    if (seven === null || seven === undefined) state = "BLANK";
+    else if (seven <= 4) state = "WATCH";
+    var node = tileNode(
+      "WATCH WEAR",
+      seven === null || seven === undefined ? "—" : seven + "/7",
+      "flat",
+      state,
+      [
+        // Both lines have to survive `text-overflow: ellipsis` in a tile this
+        // narrow, so they are short by construction. What the count means is
+        // spelled out in the footer, which has the width for it.
+        "60d " + num(sixty, 0) + "/60 · " + scaled(sixty, 100 / 60, 0) + "%",
+        "last " + (last ? last.slice(5, 10) : "—"),
+      ]
+    );
+    return node;
   }
 
   function renderHealthAction(doc) {
@@ -1472,19 +1510,27 @@
       return box;
     }
     box.appendChild(el("div", "health-tile-value", num(score.total, 0)));
+
+    /* One pill per component, side by side. The lever is marked by the pill
+       itself rather than by a trailing note, which is what let three
+       components take three full lines of a screen whose whole constraint is
+       vertical. */
+    var pills = el("div", "health-pills");
     [
       ["duration", 50],
       ["consistency", 30],
       ["interruptions", 20],
     ].forEach(function (pair) {
       var name = pair[0];
-      var line = el(
-        "div",
-        "health-note",
-        name + " " + num(score[name], 0) + "/" + pair[1] + (score.lever === name ? "  <- lever" : "")
+      var pill = el("span", "health-pill");
+      if (score.lever === name) pill.setAttribute("data-lever", "true");
+      pill.appendChild(el("span", "health-pill-name", name));
+      pill.appendChild(
+        el("span", "health-pill-value", num(score[name], 0) + "/" + pair[1])
       );
-      box.appendChild(line);
+      pills.appendChild(pill);
     });
+    box.appendChild(pills);
     box.appendChild(
       el("div", "health-note", "bed by " + (doc.sleep.target_bedtime || "—"))
     );
