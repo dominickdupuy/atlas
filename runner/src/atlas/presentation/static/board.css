@@ -1509,6 +1509,8 @@ body[data-stale="true"] .head-right .deck {
   color: var(--green-text);
 }
 
+[data-state="NO DATA"] .health-tile-value,
+[data-state="BLANK"] .health-tile-value,
 .health-state[data-state="NO DATA"],
 .health-state[data-state="BLANK"] {
   color: var(--ink-35);
@@ -1695,11 +1697,11 @@ body[data-stale="true"] .head-right .deck {
   fill: #a06ff0;
 }
 
-rect[data-state="WATCH"] {
+.main-health rect[data-state="WATCH"] {
   opacity: 0.75;
 }
 
-rect[data-state="ALERT"] {
+.main-health rect[data-state="ALERT"] {
   fill: #b4553f;
 }
 

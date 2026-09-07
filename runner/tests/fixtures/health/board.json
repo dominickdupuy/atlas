@@ -65,7 +65,8 @@
     ]
   },
   "exercise": {
-    "zone_edges": [141.2, 155.9, 170.6, 185.3], "hr_max": 200, "rhr_anchor": 53.0,
+    "zone_edges": [141.2, 155.9, 170.6, 185.3], "fixed_hr_band": "150-160",
+    "hr_max": 200, "rhr_anchor": 53.0,
     "easy_share_60d": 0.10, "easy_share_target": 0.7, "vdot": 39.1,
     "capacity": {"metric": "speed_at_hr", "speed_at_hr_latest": 2.9,
                  "speed_at_hr_vs_avg_pct": 1.0, "speed_at_hr_trend": "flat",

@@ -454,8 +454,13 @@
     });
     if (health) {
       $("main-health").scrollTop = 0;
-      if (lastSnapshot !== null) renderHealth(lastSnapshot);
+      // Arm the return-to-ops timer before rendering: renderHealth can throw
+      // on a malformed document (a schema-1 body missing a region an older
+      // analysis version never sent), and the screen has already switched by
+      // this point. Arming first guarantees a way back to ops even then,
+      // instead of leaving the wall on a blank screen with no timer running.
       armHealthTimers();
+      if (lastSnapshot !== null) renderHealth(lastSnapshot);
     } else {
       if (healthSnapTimer !== null) clearTimeout(healthSnapTimer);
       if (healthReturnTimer !== null) clearTimeout(healthReturnTimer);
@@ -1553,7 +1558,7 @@
         el(
           "div",
           "health-note",
-          "SPEED @" + ex.zone_edges[1].toFixed(0) + ": " +
+          "SPEED @" + ex.fixed_hr_band + ": " +
             num(capacity.speed_at_hr_latest, 2) + " m/s · vs prev 5 " +
             num(capacity.speed_at_hr_vs_avg_pct, 0) + " % · trend " +
             (capacity.speed_at_hr_trend || "—") + " (n " + capacity.speed_at_hr_n_of_10 + " of 10)"
@@ -1847,34 +1852,57 @@
     );
   }
 
-  function renderHealth(s) {
-    var health = s.health || { available: false, detail: "no health data" };
-    var doc = health.available ? health.document : null;
-    var note = $("health-unavailable");
-    note.hidden = doc !== null;
-    if (doc === null) {
-      text(note, "No health board: " + (health.detail || "unknown"));
-    }
-    [
-      "health-tiles", "health-action", "health-sleep", "health-exercise",
-      "health-weight", "health-detail", "health-footer",
-    ].forEach(function (id) {
-      $(id).hidden = doc === null;
-    });
-    if (doc === null) return;
+  var HEALTH_REGION_IDS = [
+    "health-tiles", "health-action", "health-sleep", "health-exercise",
+    "health-weight", "health-detail", "health-footer",
+  ];
 
-    renderHealthTiles(doc);
-    renderHealthAction(doc);
-    renderHealthSleep(doc);
-    renderHealthExercise(doc);
-    renderHealthWeight(doc);
-    renderHealthDetail(doc);
-    renderHealthFooter(doc);
-    if (health.stale) {
-      text(
-        $("health-sleep-source"),
-        health.detail + " — numbers below are not today's"
-      );
+  function renderHealth(s) {
+    var note = $("health-unavailable");
+    try {
+      var health = s.health || { available: false, detail: "no health data" };
+      var doc = health.available ? health.document : null;
+      if (doc === null) {
+        note.hidden = false;
+        text(note, "No health board: " + (health.detail || "unknown"));
+      } else if (health.stale) {
+        // The document still renders below at full detail; this banner is the
+        // thing that keeps a week-old document from reading as today's at a
+        // glance — the STATUS tile, domain chips, action line and deviation
+        // list all sit above the sleep panel's own staleness note.
+        note.hidden = false;
+        text(note, "Stale health data: " + (health.detail || "unknown"));
+      } else {
+        note.hidden = true;
+      }
+      HEALTH_REGION_IDS.forEach(function (id) {
+        $(id).hidden = doc === null;
+      });
+      if (doc === null) return;
+
+      renderHealthTiles(doc);
+      renderHealthAction(doc);
+      renderHealthSleep(doc);
+      renderHealthExercise(doc);
+      renderHealthWeight(doc);
+      renderHealthDetail(doc);
+      renderHealthFooter(doc);
+      if (health.stale) {
+        text(
+          $("health-sleep-source"),
+          health.detail + " — numbers below are not today's"
+        );
+      }
+    } catch (err) {
+      // The screen has already switched to health by the time this runs
+      // (setScreen arms the return-to-ops timer first), so a malformed
+      // document must still leave something legible rather than a blank
+      // region with nothing on it and nothing counting down.
+      HEALTH_REGION_IDS.forEach(function (id) {
+        $(id).hidden = true;
+      });
+      note.hidden = false;
+      text(note, "Health screen error — the board will return to ops shortly.");
     }
   }
 
