@@ -1633,6 +1633,28 @@ body[data-stale="true"] .head-right .deck {
   gap: 4px;
 }
 
+/* The STATUS tile carries four lines in the same 128px the other tiles use for
+   three, and its chips wrap to a second line as soon as one domain reads
+   NO DATA — which is the normal state until the scale is in use. Without this,
+   the flex column squeezes the last child to nothing and the drivers line
+   silently disappears: the line that says WHY the status is what it is, leaving
+   a colour and no reason. Shrink the headline and the chips to buy the room,
+   and take the drivers line out of the shrink entirely. */
+.health-tile-status .health-tile-value {
+  font-size: 30px;
+  line-height: 1.1;
+}
+
+.health-tile-status .health-chips {
+  font-size: 13px;
+  gap: 10px;
+  row-gap: 2px;
+}
+
+.health-drivers {
+  flex: none;
+}
+
 .health-band {
   fill: rgba(124, 192, 255, 0.12);
 }
