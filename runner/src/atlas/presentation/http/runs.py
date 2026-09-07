@@ -52,6 +52,8 @@ _FIGURE_LABELS = (
     ("uncategorized", "{n:,} uncategorized"),
     ("decisions", "{n} decisions"),
     ("rules", "{n} new rules"),
+    ("nights", "{n} nights"),
+    ("alerts", "{n} alerts"),
 )
 
 

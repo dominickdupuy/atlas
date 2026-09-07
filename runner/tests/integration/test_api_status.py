@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import cast
 
 import pytest
@@ -382,3 +383,39 @@ async def test_a_failed_forecast_reports_unavailable_rather_than_numbers(
     assert body["weather"]["available"] is False
     assert body["weather"]["days"] == []
     assert "down" in body["weather"]["detail"]
+
+
+# --- health board -----------------------------------------------------------
+
+
+async def test_status_reports_no_health_board_when_none_exists(client: AsyncClient) -> None:
+    response = await client.get("/api/status", headers=AUTH)
+    health = response.json()["health"]
+    assert health["available"] is False
+    assert health["document"] is None
+    assert "no health board" in health["detail"]
+
+
+async def test_status_passes_the_health_document_through(
+    application: Application, client: AsyncClient
+) -> None:
+    fixture = Path(__file__).parents[1] / "fixtures" / "health" / "board.json"
+    application.settings.health_board_path.write_text(
+        fixture.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    response = await client.get("/api/status", headers=AUTH)
+    health = response.json()["health"]
+    assert health["available"] is True
+    assert health["document"]["status"]["overall"] == "ALERT"
+    assert health["document"]["tiles"][0]["key"] == "sleep"
+    # Passed through, not re-modelled: a key the runner has never heard of survives.
+    assert health["document"]["coverage"]["nights_with_data_60"] == 20
+
+
+async def test_a_broken_health_board_does_not_break_the_status(
+    application: Application, client: AsyncClient
+) -> None:
+    application.settings.health_board_path.write_text("{ truncated", encoding="utf-8")
+    response = await client.get("/api/status", headers=AUTH)
+    assert response.status_code == 200
+    assert response.json()["health"]["available"] is False

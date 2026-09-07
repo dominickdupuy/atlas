@@ -361,3 +361,32 @@ async def test_finance_figures_ride_on_the_run_detail(
     assert finance["detail"] == (
         "cron · 57s · 1,204 transactions · 3 reviewed · 0 uncategorized · 2 decisions · 1 new rules"
     )
+
+
+async def test_health_job_figures_reach_the_runs_panel(
+    application: Application, client: AsyncClient
+) -> None:
+    """The nightly analysis reports its figures like any hosted repo."""
+    state_dir = application.settings.repos_state_dir
+    state_dir.mkdir(parents=True, exist_ok=True)
+    application.settings.repos_registry.write_text(
+        '[[repo]]\nname = "health-nightly"\npath = "/opt/health"\nkind = "job"\n',
+        encoding="utf-8",
+    )
+    (state_dir / "health-nightly.json").write_text(
+        json.dumps(
+            {
+                "status": "ok",
+                "trigger": "cron",
+                "started": "2026-09-07T10:00:00",
+                "duration_seconds": 12.0,
+                "exit": 0,
+                "summary": {"nights": 20, "alerts": 1, "runs": 8, "weigh_ins": 0},
+            }
+        ),
+        encoding="utf-8",
+    )
+    response = await client.get("/api/status", headers=AUTH)
+    history = response.json()["run_timeline"]["history"]
+    entry = next(item for item in history if item["name"] == "health-nightly")
+    assert "20 nights" in entry["detail"] and "1 alerts" in entry["detail"]

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict
@@ -220,6 +221,22 @@ class WeatherInfo(_Frozen):
     days: list[WeatherDay] = []
 
 
+class HealthInfo(_Frozen):
+    """The nightly health document, passed through untouched.
+
+    The runner does not model this schema. It is authored by the health/
+    package and read by board.js; re-declaring every field here would mean a
+    runner release for every analysis change, and would give the board two
+    definitions of one document to disagree about.
+    """
+
+    available: bool
+    detail: str
+    generated_at: datetime | None = None
+    stale: bool = False
+    document: dict[str, Any] | None = None
+
+
 class BudgetInfo(_Frozen):
     level: str
     spent: str
@@ -248,6 +265,7 @@ class StatusSnapshot(_Frozen):
     timeline: list[TimelineEntry]
     calendar: CalendarInfo
     weather: WeatherInfo
+    health: HealthInfo
 
 
 def _duration_seconds(run: JobRun) -> float | None:
@@ -575,6 +593,7 @@ class StatusAssembler:
         )
         ceiling = UsdMicros(budget_status.ceiling_usd_micros)
         spent = UsdMicros(budget_status.spent_usd_micros)
+        health_state = app.health_board.read(now)
 
         return StatusSnapshot(
             generated_at=now,
@@ -614,4 +633,11 @@ class StatusAssembler:
             timeline=timeline,
             calendar=calendar,
             weather=weather,
+            health=HealthInfo(
+                available=health_state.available,
+                detail=health_state.detail,
+                generated_at=health_state.generated_at,
+                stale=health_state.stale,
+                document=health_state.document,
+            ),
         )
