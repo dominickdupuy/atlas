@@ -7,6 +7,7 @@ the environment it is testing.
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -70,3 +71,71 @@ def test_apply_refuses_to_run_as_root(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert "must not run as root" in str(exit_info.value)
     assert called == [], "apply must stop before it touches the registry"
+
+
+def test_first_clone_creates_its_directory_as_root(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The checkouts live under /opt, which is root-owned, so a repo being
+    cloned for the first time cannot create its own directory. Without this the
+    first apply for any new repo fails with "could not create work tree dir ...
+    Permission denied", and apply logs it and carries on -- so the cron line is
+    installed for a checkout that does not exist."""
+    module = _load(monkeypatch, USER="domdd")
+    target = tmp_path / "opt" / "health"
+
+    sudo_calls: list[tuple[str, ...]] = []
+    monkeypatch.setattr(module, "sudo", lambda *a: sudo_calls.append(a))
+    git_calls: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        git_calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+
+    class _Log:
+        file = None
+
+        def __call__(self, message: str) -> None:
+            pass
+
+    module.update_checkout(
+        {"path": str(target), "url": "git@github-health:x/y.git", "branch": "main"},
+        _Log(),
+    )
+
+    assert sudo_calls == [
+        ("install", "-d", "-o", "domdd", "-g", "domdd", "-m", "755", str(target))
+    ], "the directory must be made as root and handed to the owning account"
+    assert git_calls and git_calls[0][:2] == ["git", "clone"]
+    assert "sudo" not in git_calls[0], (
+        "the clone itself stays unprivileged: it needs the owning account's ssh "
+        "config for the deploy-key alias, and must leave the tree owned by it"
+    )
+
+
+def test_an_existing_checkout_is_pulled_without_touching_root(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    module = _load(monkeypatch, USER="domdd")
+    target = tmp_path / "health"
+    (target / ".git").mkdir(parents=True)
+
+    monkeypatch.setattr(module, "sudo", lambda *a: pytest.fail("no sudo for a pull"))
+    calls: list[list[str]] = []
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda cmd, **kw: (calls.append(cmd), subprocess.CompletedProcess(cmd, 0))[1],
+    )
+
+    class _Log:
+        file = None
+
+        def __call__(self, message: str) -> None:
+            pass
+
+    module.update_checkout({"path": str(target), "url": "x", "branch": "main"}, _Log())
+    assert calls[0][:3] == ["git", "-C", str(target)]
+    assert "pull" in calls[0]

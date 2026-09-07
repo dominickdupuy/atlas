@@ -199,6 +199,13 @@ def update_checkout(repo: dict, log) -> None:
     """Fast-forward the checkout; never discard local changes silently."""
     path = Path(repo["path"])
     if not (path / ".git").exists():
+        # The checkouts live under /opt, which is root-owned, so the very first
+        # clone of a repo cannot create its own directory. Make it as root and
+        # hand it to USER first; the clone itself stays unprivileged, because it
+        # needs USER's ssh config for the per-repo deploy-key alias and the
+        # working tree must end up owned by the account that runs the job.
+        if not path.exists():
+            sudo("install", "-d", "-o", USER, "-g", USER, "-m", "755", str(path))
         log(f"cloning {repo['url']} -> {path}")
         subprocess.run(["git", "clone", "-q", "-b", repo["branch"], repo["url"], str(path)],
                        check=True, stdout=log.file, stderr=subprocess.STDOUT)
