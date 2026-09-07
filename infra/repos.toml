@@ -36,3 +36,30 @@ job = "FINTRACK_ENV_FILE=/home/domdd/finance.env .venv/bin/python -m fintrack.au
 setup = "python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt"
 setup_marker = ".venv/bin/python"
 timeout_seconds = 1500
+
+[[repo]]
+name = "health-nightly"
+description = "Nightly health analysis: FreeReps Postgres -> board.json + health.db + ntfy on ALERT"
+path = "/opt/health"
+url = "git@github-health:dominickdupuy/health.git"
+branch = "main"
+kind = "job"
+# 10:00, after the phone's morning sync has landed the night. The board polls
+# /api/status every ten seconds, so the new document is on the wall within one
+# poll of the write.
+schedule = "0 10 * * *"
+job = "ATLAS_HEALTH_ENV_FILE=/home/domdd/atlas-health-analysis/.env /home/domdd/.local/bin/uv run atlas-health nightly"
+setup = "/home/domdd/.local/bin/uv sync"
+setup_marker = ".venv/bin/python"
+timeout_seconds = 900
+
+[[repo]]
+name = "health-weekly"
+description = "Sunday summary push (off unless WEEKLY_SUMMARY=true)"
+path = "/opt/health"
+url = "git@github-health:dominickdupuy/health.git"
+branch = "main"
+kind = "job"
+schedule = "0 20 * * 0"
+job = "ATLAS_HEALTH_ENV_FILE=/home/domdd/atlas-health-analysis/.env /home/domdd/.local/bin/uv run atlas-health weekly"
+timeout_seconds = 300

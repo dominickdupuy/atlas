@@ -21,6 +21,26 @@ and `/var/lib/atlas-repos`, installing `/etc/cron.d/atlas-repos`, and
 installing `atlas-repo-<name>.service` units. Everything else runs as the
 service user.
 
+## What's in the registry
+
+**health-nightly / health-weekly** — `dominickdupuy/health`, cloned to
+`/opt/health` through the `github-health` deploy key. Reads the FreeReps
+database through the read-only `analysis` role and writes
+`/var/lib/atlas-health/board.json` (schema 1; the runner reads it and
+`/api/status` passes it through as `health`) plus
+`/var/lib/atlas-health/health.db`, a SQLite history of nights, runs and
+daily status. Pushes ntfy when the overall state is ALERT. It writes
+nothing to Postgres. Configuration and credentials live in
+`/home/domdd/atlas-health-analysis/.env`, outside both checkouts. Both
+entries name the same `/opt/health` checkout deliberately: `repos.py`
+fast-forwards it before every run, so the weekly job can never execute a
+different revision than the nightly one already validated. Spec and plan:
+`docs/superpowers/specs/2026-09-07-health-screen-spec.md` and
+`docs/superpowers/plans/2026-09-07-health-screen.md` in this repository.
+
+This repository (`pi-home`) only ever reads `board.json`; it never computes
+health. See `docs/repo-map.md` for where that boundary sits in code.
+
 ## Seeing what will run
 
 ```sh

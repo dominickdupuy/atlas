@@ -597,3 +597,28 @@ to end, the two labwc/tmpfs traps, and an honest table of what is not built.
 - Did not push to `main`, force-push, or rewrite published history.
 - `atlas-phase1-provision.sh` in the repo root is left untracked — it is from the
   earlier provisioning session, not part of this work. Commit or delete as you like.
+
+## 2026-09-07 — Task 20: the health screen's registry entries and boundary docs
+
+Registered `health-nightly` (10:00 daily) and `health-weekly` (Sunday 20:00) in
+`infra/repos.toml`, cloning `dominickdupuy/health` to `/opt/health` over the
+`github-health` ssh alias. This is the screen reached from the ColoPlay's
+key 2 at the desk (dial-scrolled, added earlier this branch) — the board only
+renders it.
+
+**The document is authored outside this repository.** `board.json` is written
+nightly by the separate `dominickdupuy/health` repo, hosted here only as a
+scheduled checkout; `pi-home` reads that one file
+(`/var/lib/atlas-health/board.json`, via `HealthBoardReader` in
+`telemetry/infrastructure/health_board.py`) and never computes health or
+touches Postgres. `docs/repos.md` and `docs/repo-map.md` now record that
+boundary.
+
+This task did **not** touch the Pi: no ssh key was generated, no deploy key
+was added to GitHub, no directory was created under `/var/lib/atlas-health`,
+`scripts/repos.py apply`/`run` was not invoked against a live host, and no
+service was restarted. Those steps (the brief's Steps 1, 2, 5, 6, 7) are
+held for the repository owner to run by hand; only the registry entries and
+documentation (Steps 3-4) landed here. `scripts/repos.py validate` was run
+locally against the edited `infra/repos.toml` (registry parse only, no host
+access) and reports all three repos, including the two new ones, ok.

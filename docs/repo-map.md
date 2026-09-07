@@ -40,11 +40,21 @@ and optional voice/MCP services are separate processes defined in Compose.
 | Approvals | `runner/src/atlas/approvals/` | Freeze proposed actions, notify, decide idempotently, expire by TTL |
 | Budget | `runner/src/atlas/budget/` | Token costs in integer micro-dollars, ledger, daily ceiling, scheduler pause |
 | Connectors | `runner/src/atlas/connectors/` | Scoped tool gateway; tier executors; Anthropic, MCP, ICS, weather, ntfy adapters |
-| Telemetry | `runner/src/atlas/telemetry/` | MQTT publisher, in-process SSE stream, health, host metrics, hosted repo reader |
+| Telemetry | `runner/src/atlas/telemetry/` | MQTT publisher, in-process SSE stream, health, host metrics, hosted repo reader, `infrastructure/health_board.py` (reads the nightly health document) |
 | Persistence | `runner/src/atlas/persistence/` | SQLite connection and migrations: job_runs, approvals, budget_ledger |
 | Presentation | `runner/src/atlas/presentation/` | FastAPI/auth, status assembly, Jinja/htmx panels, passive board JavaScript/CSS |
 | Hosted repos | `scripts/repos.py`, `infra/repos.toml`, `docs/repos.md` | Ordinary external projects, cron, queued runs, systemd services, logs/state |
 | Deployment | `scripts/deploy.sh`, `.github/workflows/ci.yml`, `infra/systemd/` | CI promotes green main to release; deploy timer follows release |
+
+The health screen's analysis is not part of this repository. It lives in the
+separate `dominickdupuy/health` repo, hosted on the Pi as the `health-nightly`
+and `health-weekly` entries in `infra/repos.toml` (documented in
+`docs/repos.md`). The two repositories meet at exactly one file:
+`/var/lib/atlas-health/board.json`, written nightly by that repo and read by
+`telemetry/infrastructure/health_board.py`'s `HealthBoardReader`, which
+`StatusAssembler` (`presentation/http/status.py`) passes through on
+`/api/status` as `health`. This repository renders that document on the
+board's second screen; it never computes health and never touches Postgres.
 
 The job execution path is `CronScheduler` -> `ExecuteJobService` -> budget
 preflight -> `SubprocessJobLauncher` -> `python -m atlas execute-job` -> tier
