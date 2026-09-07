@@ -1702,3 +1702,45 @@ rect[data-state="WATCH"] {
 rect[data-state="ALERT"] {
   fill: #b4553f;
 }
+
+.health-weight-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.health-load {
+  fill: rgba(124, 192, 255, 0.55);
+}
+
+.health-dot {
+  fill: var(--cyan);
+}
+
+.health-zone[data-zone="1"] {
+  fill: #3d6f9e;
+}
+
+.health-zone[data-zone="2"] {
+  fill: #4aa3e8;
+}
+
+.health-zone[data-zone="3"] {
+  fill: var(--orange);
+}
+
+.health-zone[data-zone="4"] {
+  fill: #e8734a;
+}
+
+.health-zone[data-zone="5"] {
+  fill: var(--red);
+}
+
+.health-row[data-state="WATCH"] {
+  color: var(--amber-text);
+}
+
+.health-row[data-state="ALERT"] {
+  color: var(--red-text);
+}

@@ -1486,6 +1486,360 @@
     );
   }
 
+  function loadBars(weekly) {
+    var width = 860;
+    var height = 120;
+    var svg = healthSvg(width, height);
+    var top = 1;
+    weekly.forEach(function (week) {
+      if (week.trimp > top) top = week.trimp;
+    });
+    var slot = width / Math.max(1, weekly.length);
+    weekly.forEach(function (week, index) {
+      var barHeight = (week.trimp / top) * (height - 18);
+      svg.appendChild(
+        svgEl("rect", {
+          x: String(index * slot + 6), width: String(slot - 12),
+          y: String(height - 18 - barHeight), height: String(Math.max(1, barHeight)),
+          class: "health-load",
+        })
+      );
+    });
+    return svg;
+  }
+
+  function zoneBar(zones) {
+    var width = 120;
+    var height = 10;
+    var svg = healthSvg(width, height);
+    var total = 0;
+    zones.forEach(function (value) {
+      total += value;
+    });
+    if (total <= 0) return svg;
+    var x = 0;
+    zones.forEach(function (value, index) {
+      var span = (value / total) * width;
+      if (span <= 0) return;
+      svg.appendChild(
+        svgEl("rect", {
+          x: String(x), y: "0", width: String(span), height: String(height),
+          class: "health-zone", "data-zone": String(index + 1),
+        })
+      );
+      x += span;
+    });
+    return svg;
+  }
+
+  function renderHealthExercise(doc) {
+    var host = $("health-exercise-body");
+    clear(host);
+    var ex = doc.exercise;
+    var capacity = ex.capacity || {};
+    var consistency = ex.consistency || {};
+    var load = ex.load || {};
+
+    var left = el("div", "health-col");
+    left.appendChild(
+      el(
+        "div",
+        "health-sub",
+        "CAPACITY " + (capacity.capacity_z === null ? "—" : "z " + num(capacity.capacity_z, 1))
+      )
+    );
+    if (capacity.metric === "speed_at_hr") {
+      left.appendChild(
+        el(
+          "div",
+          "health-note",
+          "SPEED @" + ex.zone_edges[1].toFixed(0) + ": " +
+            num(capacity.speed_at_hr_latest, 2) + " m/s · vs prev 5 " +
+            num(capacity.speed_at_hr_vs_avg_pct, 0) + " % · trend " +
+            (capacity.speed_at_hr_trend || "—") + " (n " + capacity.speed_at_hr_n_of_10 + " of 10)"
+        )
+      );
+    } else {
+      left.appendChild(
+        el(
+          "div",
+          "health-note",
+          "EF (too few speed samples): " + num(capacity.ef_latest, 4) +
+            " · vs prev 5 " + num(capacity.ef_vs_avg_pct, 0) + " %"
+        )
+      );
+    }
+    left.appendChild(
+      el(
+        "div",
+        "health-note",
+        "HR RECOVERY " + num(capacity.hrr_latest, 0) + " (mean " + num(capacity.hrr_mean, 1) +
+          ", SD " + num(capacity.hrr_sd, 1) + ", n " + capacity.hrr_n + ")"
+      )
+    );
+    left.appendChild(
+      el(
+        "div",
+        "health-note",
+        "CONSISTENCY runs/wk " + num(consistency.runs_per_week_4w, 1) +
+          " (tgt " + consistency.runs_per_week_target + ") · strength/wk " +
+          num(consistency.strength_per_week_4w, 1) + " (tgt " +
+          consistency.strength_per_week_target + ") · this week " +
+          consistency.runs_this_week + "/" + consistency.strength_this_week
+      )
+    );
+    left.appendChild(
+      el(
+        "div",
+        "health-note",
+        "EASY SHARE 60d " + scaled(ex.easy_share_60d, 100, 0) + " % (tgt " +
+          scaled(ex.easy_share_target, 100, 0) + " %)"
+      )
+    );
+    left.appendChild(
+      el(
+        "div",
+        "health-note",
+        "ZONES (HRR, max " + ex.hr_max + ", rest " + num(ex.rhr_anchor, 0) + "): Z2 " +
+          num(ex.zone_edges[0], 0) + "-" + num(ex.zone_edges[1], 0) + " · Z3 " +
+          num(ex.zone_edges[1], 0) + "-" + num(ex.zone_edges[2], 0) + " · Z4 " +
+          num(ex.zone_edges[2], 0) + "-" + num(ex.zone_edges[3], 0) + " · Z5 " +
+          num(ex.zone_edges[3], 0) + "+"
+      )
+    );
+    left.appendChild(el("div", "health-sub", "LOAD · 8 WEEKS (Edwards TRIMP)"));
+    left.appendChild(loadBars(ex.weekly || []));
+    left.appendChild(
+      el(
+        "div",
+        "health-note",
+        "this week " + num(load.load_week, 0) + " · 4-wk avg " + num(load.load_4w_avg, 0) +
+          " · " +
+          (load.acwr === null
+            ? "ACWR hidden (needs 8 workouts in 28 d, have " + load.workouts_28d + ")"
+            : "ACWR " + num(load.acwr, 2) + " (caution band, not a rule)")
+      )
+    );
+    host.appendChild(left);
+
+    var right = el("div", "health-col");
+    right.appendChild(el("div", "health-sub", "RUNS · LAST 8"));
+    var rows = el("div", "health-rows");
+    (ex.runs || []).forEach(function (run) {
+      var row = el("div", "health-row");
+      row.setAttribute("data-state", run.state);
+      row.appendChild(el("span", null, run.date));
+      row.appendChild(el("span", null, num(run.miles, 2) + " mi"));
+      row.appendChild(el("span", null, num(run.pace_min_mi, 1) + "/mi"));
+      row.appendChild(el("span", null, num(run.avg_hr, 0) + "/" + num(run.max_hr, 0)));
+      row.appendChild(
+        el("span", null, run.hrr === null ? "—" : "hrr " + num(run.hrr, 0))
+      );
+      row.appendChild(zoneBar(run.zones || [0, 0, 0, 0, 0]));
+      rows.appendChild(row);
+    });
+    right.appendChild(rows);
+    right.appendChild(
+      el(
+        "div",
+        "health-note",
+        ex.vdot === null
+          ? "VO2 max: none from Apple, and no run long enough to estimate"
+          : "VO2 est. (VDOT) " + num(ex.vdot, 1) + " — est. from a training run, reads low"
+      )
+    );
+    host.appendChild(right);
+    text(
+      $("health-exercise-source"),
+      "durability " + num(capacity.durability_28d_min, 0) + " min in 28 d · " +
+        num(capacity.durability_60d_min, 0) + " min in 60 d"
+    );
+  }
+
+  function renderHealthWeight(doc) {
+    var host = $("health-weight-body");
+    clear(host);
+    var weight = doc.weight;
+    var width = 1180;
+    var height = 160;
+    var svg = healthSvg(width, height);
+    var keys = dayKeys(doc.generated_at, 60);
+    var byDate = {};
+    (weight.readings || []).forEach(function (reading) {
+      byDate[reading.date] = reading.kg;
+    });
+
+    var values = [];
+    keys.forEach(function (key) {
+      if (byDate[key] !== undefined) values.push(byDate[key]);
+    });
+    if (values.length === 0) {
+      host.appendChild(
+        el(
+          "div",
+          "health-note",
+          "No readings yet. Last known " + num(weight.last_kg, 1) + " kg on " +
+            (weight.last_date || "—") + " — the scale writes daily once it is in use."
+        )
+      );
+      text($("health-weight-source"), "weigh-ins 0/7");
+      return;
+    }
+
+    var low = Math.min.apply(null, values) - 1;
+    var high = Math.max.apply(null, values) + 1;
+    var slot = width / keys.length;
+
+    function y(kg) {
+      return height - ((kg - low) / (high - low || 1)) * height;
+    }
+
+    keys.forEach(function (key, index) {
+      var kg = byDate[key];
+      if (kg === undefined) return;
+      svg.appendChild(
+        svgEl("circle", {
+          cx: String(index * slot + slot / 2), cy: String(y(kg)), r: "3",
+          class: "health-dot",
+        })
+      );
+    });
+    [
+      { value: weight.weight_7d, cls: "health-mean" },
+      { value: weight.weight_28d, cls: "health-goal" },
+    ].forEach(function (line) {
+      if (line.value === null || line.value === undefined) return;
+      svg.appendChild(
+        svgEl("line", {
+          x1: "0", x2: String(width), y1: String(y(line.value)), y2: String(y(line.value)),
+          class: line.cls, "vector-effect": "non-scaling-stroke",
+        })
+      );
+    });
+    host.appendChild(svg);
+    host.appendChild(
+      el(
+        "div",
+        "health-note",
+        "7d " + num(weight.weight_7d, 1) + " kg · 28d " + num(weight.weight_28d, 1) +
+          " kg · week " + num(weight.week_change, 1) + " kg · BMI " + num(weight.bmi, 1) +
+          (weight.bmi_stale ? " (stale)" : "") + " · weigh-ins " + weight.weigh_ins_7d + "/7"
+      )
+    );
+    text($("health-weight-source"), "weigh-ins " + weight.weigh_ins_7d + "/7");
+  }
+
+  /* One thin bar per night from bedtime to wake on a 21:00-10:00 axis. The
+     bedtime scale in the document is the spec's shifted one (00:40 = 24.67),
+     so 21:00 is 21 and 10:00 is 34. */
+  function bedtimeStrip(doc) {
+    var width = 860;
+    var height = 200;
+    var axisLow = 21;
+    var axisHigh = 34;
+    var svg = healthSvg(width, height);
+    var nights = doc.sleep.nights || [];
+    var rowHeight = nights.length ? Math.min(6, height / nights.length) : 6;
+
+    function x(hour) {
+      return ((Math.max(axisLow, Math.min(axisHigh, hour)) - axisLow) / (axisHigh - axisLow)) * width;
+    }
+
+    nights.forEach(function (night, index) {
+      var wake = night.waketime < 12 ? night.waketime + 24 : night.waketime;
+      var y = index * (height / Math.max(1, nights.length));
+      svg.appendChild(
+        svgEl("rect", {
+          x: String(x(night.bedtime)), y: String(y),
+          width: String(Math.max(2, x(wake) - x(night.bedtime))),
+          height: String(Math.max(2, rowHeight - 1)),
+          class: "health-core", "data-state": night.state,
+        })
+      );
+    });
+    [
+      { hour: doc.sleep.median_bedtime, cls: "health-mean" },
+      {
+        hour: doc.sleep.target_bedtime
+          ? Number(doc.sleep.target_bedtime.slice(0, 2)) +
+            Number(doc.sleep.target_bedtime.slice(3)) / 60
+          : null,
+        cls: "health-goal",
+      },
+    ].forEach(function (line) {
+      if (line.hour === null || line.hour === undefined) return;
+      var hour = line.hour < 12 ? line.hour + 24 : line.hour;
+      svg.appendChild(
+        svgEl("line", {
+          x1: String(x(hour)), x2: String(x(hour)), y1: "0", y2: String(height),
+          class: line.cls, "vector-effect": "non-scaling-stroke",
+        })
+      );
+    });
+    return svg;
+  }
+
+  function renderHealthDetail(doc) {
+    var host = $("health-detail-body");
+    clear(host);
+    var left = el("div", "health-col");
+    left.appendChild(el("div", "health-sub", "BEDTIME · WAKE (21:00 to 10:00)"));
+    left.appendChild(bedtimeStrip(doc));
+    left.appendChild(
+      el(
+        "div",
+        "health-note",
+        "median bedtime line, target bedtime dashed · SD " +
+          num(doc.sleep.bedtime_sd_min, 0) + " min"
+      )
+    );
+    host.appendChild(left);
+
+    var right = el("div", "health-col");
+    right.appendChild(
+      el(
+        "div",
+        "health-sub",
+        "SOCIAL JET LAG " +
+          (doc.sleep.social_jet_lag_h === null
+            ? "— (needs 3 free and 3 work nights)"
+            : num(doc.sleep.social_jet_lag_h, 1) + " h")
+      )
+    );
+    right.appendChild(el("div", "health-sub", "HR-MIN TIMING · per night"));
+    right.appendChild(
+      sparkline({
+        width: 440, height: 80,
+        values: (doc.sleep.nights || []).map(function (night) {
+          return night.hr_min_frac;
+        }),
+        min: 0, max: 1, band: { low: 0.5, high: 0.7 },
+      })
+    );
+    right.appendChild(
+      el("div", "health-note", "band = mid; above it is late (a heuristic, never an alert)")
+    );
+    var naps = 0;
+    (doc.sleep.nights || []).forEach(function (night) {
+      naps += night.naps_min || 0;
+    });
+    right.appendChild(el("div", "health-note", "NAPS " + num(naps, 0) + " min over 60 days"));
+    host.appendChild(right);
+    text($("health-detail-source"), "nights with the watch only");
+  }
+
+  function renderHealthFooter(doc) {
+    var coverage = doc.coverage || {};
+    text(
+      $("health-footer"),
+      "nights with data " + coverage.nights_with_data_7 + "/7, " +
+        coverage.nights_with_data_60 + "/60 · weigh-ins " + coverage.weigh_ins_7d +
+        "/7 · last import " + (coverage.last_import_at || "—") +
+        " · last HR " + (coverage.last_hr_sample_at || "—") +
+        " · last weight " + (coverage.last_weight_at || "—")
+    );
+  }
+
   function renderHealth(s) {
     var health = s.health || { available: false, detail: "no health data" };
     var doc = health.available ? health.document : null;
@@ -1505,7 +1859,10 @@
     renderHealthTiles(doc);
     renderHealthAction(doc);
     renderHealthSleep(doc);
-    // Tasks 19 fills the exercise, weight, detail and footer regions.
+    renderHealthExercise(doc);
+    renderHealthWeight(doc);
+    renderHealthDetail(doc);
+    renderHealthFooter(doc);
     if (health.stale) {
       text(
         $("health-sleep-source"),
