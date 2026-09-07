@@ -1094,23 +1094,412 @@
     board.style.transform = "scale(" + Math.min(vw / width, vh / BOARD_H) + ")";
   }
 
-  /* Tasks 18 and 19 fill this in. Until then the screen is honest about
-     having nothing: an empty region would read as "all clear". */
+  // --- health screen: drawing ---------------------------------------------
+
+  /* Every chart on this screen is hand-drawn SVG on the canvas's own pixel
+     grid, exactly like the weather chart: no library reaches this Pi, and a
+     fixed viewBox keeps the type scale identical to the rest of the board. */
+  function healthSvg(width, height) {
+    return svgEl("svg", {
+      class: "health-chart",
+      viewBox: "0 0 " + width + " " + height,
+      width: String(width),
+      height: String(height),
+      preserveAspectRatio: "none",
+    });
+  }
+
+  function num(value, digits, fallback) {
+    if (value === null || value === undefined || isNaN(value)) return fallback || "—";
+    return Number(value).toFixed(digits === undefined ? 0 : digits);
+  }
+
+  /* The last `days` calendar dates ending at the document's own timestamp, as
+     YYYY-MM-DD. The night lists carry only nights the watch was worn, so the
+     charts need the calendar to put a gap where a night is missing — which is
+     45% of them, and the single most important caveat on this screen. */
+  function dayKeys(endIso, days) {
+    var end = new Date(endIso);
+    var keys = [];
+    for (var i = days - 1; i >= 0; i--) {
+      var day = new Date(end.getTime() - i * 86400000);
+      keys.push(
+        day.getFullYear() + "-" + pad(day.getMonth() + 1) + "-" + pad(day.getDate())
+      );
+    }
+    return keys;
+  }
+
+  /* A line over a fixed number of slots, with gaps where a value is missing.
+     `options`: {width, height, values (array of number|null), min, max, band}
+     where `band` is an optional {low, high} shaded range. */
+  function sparkline(options) {
+    var w = options.width;
+    var h = options.height;
+    var svg = healthSvg(w, h);
+    var values = options.values;
+    var min = options.min;
+    var max = options.max;
+    var span = max - min || 1;
+    var step = values.length > 1 ? w / (values.length - 1) : w;
+
+    function y(value) {
+      return h - ((value - min) / span) * h;
+    }
+
+    if (options.band) {
+      svg.appendChild(
+        svgEl("rect", {
+          x: "0",
+          y: String(y(options.band.high)),
+          width: String(w),
+          height: String(Math.max(1, y(options.band.low) - y(options.band.high))),
+          class: "health-band",
+        })
+      );
+    }
+
+    var run = [];
+    values.forEach(function (value, index) {
+      if (value === null || value === undefined) {
+        if (run.length > 1) {
+          svg.appendChild(
+            svgEl("polyline", {
+              points: run.join(" "),
+              class: "health-line",
+              "vector-effect": "non-scaling-stroke",
+            })
+          );
+        }
+        run = [];
+        return;
+      }
+      run.push(index * step + "," + y(value));
+    });
+    if (run.length > 1) {
+      svg.appendChild(
+        svgEl("polyline", {
+          points: run.join(" "),
+          class: "health-line",
+          "vector-effect": "non-scaling-stroke",
+        })
+      );
+    }
+    return svg;
+  }
+
+  function tileNode(title, value, arrow, state, lines) {
+    var node = el("div", "health-tile");
+    node.setAttribute("data-state", state || "OK");
+    node.appendChild(el("div", "health-tile-title", title));
+    var head = el("div", "health-tile-value", value);
+    if (arrow && arrow !== "flat") {
+      var mark = el("span", "health-arrow");
+      mark.setAttribute("data-arrow", arrow);
+      head.appendChild(mark);
+    }
+    node.appendChild(head);
+    (lines || []).forEach(function (line) {
+      node.appendChild(el("div", "health-tile-line", line));
+    });
+    return node;
+  }
+
+  function renderHealthTiles(doc) {
+    var host = $("health-tiles");
+    clear(host);
+
+    // The STATUS tile is the only tile with chips, and the only one that
+    // never shows a raw number other than its two drivers (spec §4.8.6).
+    var status = el("div", "health-tile health-tile-status");
+    status.setAttribute("data-state", doc.status.overall);
+    status.appendChild(el("div", "health-tile-title", "STATUS"));
+    status.appendChild(el("div", "health-tile-value", doc.status.overall));
+    var chips = el("div", "health-chips");
+    ["sleep", "heart", "fitness", "weight"].forEach(function (domain) {
+      var state = doc.status.domains[domain] || "NO DATA";
+      var chip = el(
+        "span",
+        "health-state",
+        domain.charAt(0).toUpperCase() + domain.slice(1) + " " + state
+      );
+      chip.setAttribute("data-state", state);
+      chips.appendChild(chip);
+    });
+    status.appendChild(chips);
+    status.appendChild(el("div", "health-drivers", (doc.status.drivers || []).join(" · ")));
+    host.appendChild(status);
+
+    (doc.tiles || []).forEach(function (tile) {
+      host.appendChild(tileNode(tile.title, tile.value, tile.arrow, tile.state, tile.lines));
+    });
+  }
+
+  function renderHealthAction(doc) {
+    var host = $("health-action");
+    clear(host);
+    host.appendChild(el("div", "health-action-line", "> " + doc.action));
+    (doc.deviations || []).forEach(function (row) {
+      var line = el("div", "health-dev");
+      line.appendChild(el("span", null, row.label));
+      line.appendChild(el("span", null, row.value));
+      line.appendChild(el("span", null, row.vs_avg));
+      var mark = el("span", "health-arrow");
+      mark.setAttribute("data-arrow", row.arrow || "flat");
+      line.appendChild(mark);
+      var state = el("span", "health-state", row.state);
+      state.setAttribute("data-state", row.state);
+      line.appendChild(state);
+      host.appendChild(line);
+    });
+    var coverage = doc.coverage || {};
+    host.appendChild(
+      el(
+        "div",
+        "health-note",
+        "watch worn " +
+          num(coverage.nights_with_data_7, 0, "0") +
+          "/7 nights · " +
+          num(coverage.nights_with_data_60, 0, "0") +
+          "/60"
+      )
+    );
+  }
+
+  /* Stacked deep/REM/core per night on a calendar axis, so the 45% of nights
+     without the watch appear as gaps rather than being silently closed up.
+     A hollow marker sits on the baseline for each of those nights. */
+  function sleepBars(doc) {
+    var width = 860;
+    var height = 300;
+    var svg = healthSvg(width, height);
+    var keys = dayKeys(doc.generated_at, 60);
+    var byDate = {};
+    (doc.sleep.nights || []).forEach(function (night) {
+      byDate[night.date] = night;
+    });
+    var top = 600; // 10 h; every recorded night fits, and the goal line lands high
+    var slot = width / keys.length;
+    var barWidth = Math.max(4, slot - 3);
+
+    function y(minutes) {
+      return height - (Math.min(minutes, top) / top) * height;
+    }
+
+    var goal = doc.sleep.goal_h * 60;
+    svg.appendChild(
+      svgEl("line", {
+        x1: "0", x2: String(width), y1: String(y(goal)), y2: String(y(goal)),
+        class: "health-goal", "vector-effect": "non-scaling-stroke",
+      })
+    );
+
+    keys.forEach(function (key, index) {
+      var x = index * slot;
+      var night = byDate[key];
+      if (!night) {
+        svg.appendChild(
+          svgEl("circle", {
+            cx: String(x + barWidth / 2), cy: String(height - 5), r: "3",
+            class: "health-missing",
+          })
+        );
+        return;
+      }
+      var parts = [
+        { minutes: night.deep_min, cls: "health-deep" },
+        { minutes: night.core_min, cls: "health-core" },
+        { minutes: night.rem_min, cls: "health-rem" },
+      ];
+      var base = 0;
+      parts.forEach(function (part) {
+        var minutes = part.minutes || 0;
+        if (minutes <= 0) return;
+        svg.appendChild(
+          svgEl("rect", {
+            x: String(x), width: String(barWidth),
+            y: String(y(base + minutes)),
+            height: String(Math.max(1, y(base) - y(base + minutes))),
+            class: part.cls, "data-state": night.state,
+          })
+        );
+        base += minutes;
+      });
+    });
+
+    // The seven-night mean, on the same axis, over nights with data.
+    var means = [];
+    var window = [];
+    keys.forEach(function (key) {
+      var night = byDate[key];
+      if (night) {
+        window.push(night.asleep_min);
+        if (window.length > 7) window.shift();
+      }
+      if (window.length === 7) {
+        var total = 0;
+        window.forEach(function (value) {
+          total += value;
+        });
+        means.push(total / 7);
+      } else {
+        means.push(null);
+      }
+    });
+    var points = [];
+    means.forEach(function (value, index) {
+      if (value === null) return;
+      points.push(index * slot + slot / 2 + "," + y(value));
+    });
+    if (points.length > 1) {
+      svg.appendChild(
+        svgEl("polyline", {
+          points: points.join(" "), class: "health-mean",
+          "vector-effect": "non-scaling-stroke",
+        })
+      );
+    }
+    return svg;
+  }
+
+  function scoreBlock(doc) {
+    var box = el("div", "health-col");
+    var score = doc.sleep.score;
+    box.appendChild(el("div", "health-sub", "SLEEP SCORE"));
+    if (!score) {
+      box.appendChild(el("div", "health-note", "not enough nights"));
+      return box;
+    }
+    box.appendChild(el("div", "health-tile-value", num(score.total, 0)));
+    [
+      ["duration", 50],
+      ["consistency", 30],
+      ["interruptions", 20],
+    ].forEach(function (pair) {
+      var name = pair[0];
+      var line = el(
+        "div",
+        "health-note",
+        name + " " + num(score[name], 0) + "/" + pair[1] + (score.lever === name ? "  <- lever" : "")
+      );
+      box.appendChild(line);
+    });
+    box.appendChild(
+      el("div", "health-note", "bed by " + (doc.sleep.target_bedtime || "—"))
+    );
+    return box;
+  }
+
+  function heartSparks(doc) {
+    var box = el("div", "health-col");
+    var keys = dayKeys(doc.generated_at, 60);
+    var byDate = {};
+    (doc.heart.nights || []).forEach(function (night) {
+      byDate[night.date] = night;
+    });
+
+    function series(field) {
+      return keys.map(function (key) {
+        var night = byDate[key];
+        return night && night[field] !== null ? night[field] : null;
+      });
+    }
+
+    var hr = series("sleep_avg_hr");
+    var hrMean = doc.heart.sleep_hr_mean_60d;
+    var hrSd = doc.heart.sleep_hr_sd_60d || 0;
+    box.appendChild(
+      el("div", "health-sub", "SLEEPING HR · 60 NIGHTS · avg " + num(hrMean, 0))
+    );
+    box.appendChild(
+      sparkline({
+        width: 440, height: 90, values: hr,
+        min: 35, max: 70,
+        band: hrMean === null ? null : { low: hrMean - hrSd, high: hrMean + hrSd },
+      })
+    );
+
+    var hrv = series("hrv");
+    var hrvMean = doc.heart.hrv_mean_60d;
+    var hrvSd = doc.heart.hrv_7n_sd || 0;
+    box.appendChild(el("div", "health-sub", "HRV · 60 NIGHTS · avg " + num(hrvMean, 0) + " ms"));
+    box.appendChild(
+      sparkline({
+        width: 440, height: 90, values: hrv,
+        min: 20, max: 140,
+        band: hrvMean === null ? null : { low: hrvMean - hrvSd, high: hrvMean + hrvSd },
+      })
+    );
+
+    var last4 = (doc.heart.hrr_last4 || [])
+      .map(function (value) {
+        return num(value, 0);
+      })
+      .join(" ");
+    box.appendChild(
+      el(
+        "div",
+        "health-note",
+        "RESTING " + num(doc.heart.rhr_latest, 0) +
+          " (60d " + num(doc.heart.rhr_60d, 0) + ")" +
+          " · RESP " + num(doc.heart.resp_latest, 1) +
+          " · HRR last 4: " + (last4 || "—")
+      )
+    );
+    return box;
+  }
+
+  function renderHealthSleep(doc) {
+    var host = $("health-sleep-body");
+    clear(host);
+    var left = el("div", "health-col");
+    left.appendChild(sleepBars(doc));
+    left.appendChild(
+      el(
+        "div",
+        "health-note",
+        "deep · core · REM per night, goal " + num(doc.sleep.goal_h, 1) +
+          " h, 7-night mean; hollow marker = watch not worn"
+      )
+    );
+    host.appendChild(left);
+    var right = el("div", "health-col");
+    right.appendChild(scoreBlock(doc));
+    right.appendChild(heartSparks(doc));
+    host.appendChild(right);
+    text(
+      $("health-sleep-source"),
+      "7n " + num(doc.sleep.mean_7n_min / 60, 1) + " h · 60d " +
+        num(doc.sleep.mean_60d_min / 60, 1) + " h · debt " + num(doc.sleep.debt_14n_h, 1) + " h"
+    );
+  }
+
   function renderHealth(s) {
     var health = s.health || { available: false, detail: "no health data" };
+    var doc = health.available ? health.document : null;
     var note = $("health-unavailable");
-    var missing = !health.available || !health.document;
-    note.hidden = !missing;
-    if (missing) {
+    note.hidden = doc !== null;
+    if (doc === null) {
       text(note, "No health board: " + (health.detail || "unknown"));
     }
-    ["health-tiles", "health-sleep", "health-exercise", "health-weight", "health-detail"].forEach(
-      function (id) {
-        $(id).hidden = missing;
-      }
-    );
-    $("health-action").hidden = missing;
-    $("health-footer").hidden = missing;
+    [
+      "health-tiles", "health-action", "health-sleep", "health-exercise",
+      "health-weight", "health-detail", "health-footer",
+    ].forEach(function (id) {
+      $(id).hidden = doc === null;
+    });
+    if (doc === null) return;
+
+    renderHealthTiles(doc);
+    renderHealthAction(doc);
+    renderHealthSleep(doc);
+    // Tasks 19 fills the exercise, weight, detail and footer regions.
+    if (health.stale) {
+      text(
+        $("health-sleep-source"),
+        health.detail + " — numbers below are not today's"
+      );
+    }
   }
 
   // --- render + poll ------------------------------------------------------

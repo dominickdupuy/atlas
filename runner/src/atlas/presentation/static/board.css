@@ -1628,3 +1628,55 @@ body[data-stale="true"] .head-right .deck {
 .health-arrow[data-arrow="flat"]::after {
   content: "-";
 }
+
+.health-tile-status {
+  gap: 4px;
+}
+
+.health-band {
+  fill: rgba(124, 192, 255, 0.12);
+}
+
+.health-line {
+  fill: none;
+  stroke: var(--cyan);
+  stroke-width: 1.6;
+}
+
+.health-mean {
+  fill: none;
+  stroke: var(--blue-text);
+  stroke-width: 2;
+}
+
+.health-goal {
+  stroke: rgba(226, 238, 252, 0.28);
+  stroke-width: 1;
+  stroke-dasharray: 4 5;
+}
+
+.health-missing {
+  fill: none;
+  stroke: var(--ink-35);
+  stroke-width: 1;
+}
+
+.health-deep {
+  fill: #2f6fe0;
+}
+
+.health-core {
+  fill: #4aa3e8;
+}
+
+.health-rem {
+  fill: #a06ff0;
+}
+
+rect[data-state="WATCH"] {
+  opacity: 0.75;
+}
+
+rect[data-state="ALERT"] {
+  fill: #b4553f;
+}
