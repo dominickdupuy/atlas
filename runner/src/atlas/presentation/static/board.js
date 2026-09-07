@@ -75,6 +75,13 @@
   // Long enough to read a day you panned to, short enough that a board left
   // alone is showing today again before anyone next glances at it.
   var DAY_VIEW_IDLE_MS = 45000;
+  // The health screen (spec §7). The dial scrolls it; it snaps back to the
+  // top a minute after the last detent, and hands the wall back to the ops
+  // board after ten minutes, so a screen left on health is not what anyone
+  // finds tomorrow morning.
+  var HEALTH_SCROLL_PX = 140;
+  var HEALTH_SNAP_MS = 60000;
+  var HEALTH_RETURN_MS = 600000;
 
   var lastSuccessAt = null;
   var lastSnapshot = null;
@@ -82,6 +89,9 @@
   // whatever range the server served.
   var dayView = 0;
   var dayViewTimer = null;
+  var screenName = "ops";
+  var healthSnapTimer = null;
+  var healthReturnTimer = null;
   // The drawn dial's own state: which of its screen the mode wants, whose
   // message is holding that screen, and how far the ring has been turned.
   var deckModeLabel = "INIT";
@@ -196,6 +206,9 @@
       // screen carries the one thing they cannot: how many.
       label = s.approvals_total ? String(s.approvals_total) : "!";
     }
+    // While the health screen is up the dial's face says so; the display mode
+    // takes the face back when the board returns to ops.
+    if (screenName === "health") label = "HEALTH";
     deckModeLabel = label;
     // A key's report owns the screen while it lasts; a poll landing under it
     // must not blank it out mid-message.
@@ -386,7 +399,8 @@
       if (step !== 0) {
         e.preventDefault();
         deckTurn(step);
-        shiftDays(step);
+        if (screenName === "health") scrollHealth(step);
+        else shiftDays(step);
         return;
       }
 
@@ -394,10 +408,12 @@
       if (key > 0) {
         e.preventDefault();
         deckPressKey(key);
-        // Only the top-left key has a screen behind it. The other three say
-        // they arrived and nothing more, rather than pretending to switch to
-        // something that does not exist yet.
-        if (key !== DECK_HOME_KEY) deckSay("K" + key);
+        // Two screens exist now. The other two keys still say they arrived
+        // and nothing more, rather than pretending to switch to something
+        // that does not exist yet.
+        if (key === DECK_HOME_KEY) setScreen("ops");
+        else if (key === 2) setScreen("health");
+        else deckSay("K" + key);
         return;
       }
     }
@@ -417,6 +433,60 @@
     // often enough that swallowing them would cost more than it explains.
     if (e.code === "F5" || (e.ctrlKey && e.code === "KeyR")) return;
     deckSay(describeKey(e));
+  }
+
+  function setScreen(name) {
+    if (screenName === name) {
+      // Pressing the key for the screen already up restarts its clock rather
+      // than doing nothing: the person is standing there, reading it.
+      if (name === "health") armHealthTimers();
+      return;
+    }
+    screenName = name;
+    var health = name === "health";
+    $("main").hidden = health;
+    $("main-health").hidden = !health;
+    [1, 2].forEach(function (key) {
+      var node = document.querySelector('.deck-key[data-key="' + key + '"]');
+      if (node === null) return;
+      if ((key === 2) === health) node.setAttribute("data-active", "true");
+      else node.removeAttribute("data-active");
+    });
+    if (health) {
+      $("main-health").scrollTop = 0;
+      if (lastSnapshot !== null) renderHealth(lastSnapshot);
+      armHealthTimers();
+    } else {
+      if (healthSnapTimer !== null) clearTimeout(healthSnapTimer);
+      if (healthReturnTimer !== null) clearTimeout(healthReturnTimer);
+      healthSnapTimer = null;
+      healthReturnTimer = null;
+    }
+    deckSay(health ? "HEALTH" : "OPS");
+  }
+
+  function armHealthTimers() {
+    if (healthReturnTimer !== null) clearTimeout(healthReturnTimer);
+    healthReturnTimer = setTimeout(function () {
+      healthReturnTimer = null;
+      setScreen("ops");
+    }, HEALTH_RETURN_MS);
+  }
+
+  function armHealthSnap() {
+    if (healthSnapTimer !== null) clearTimeout(healthSnapTimer);
+    healthSnapTimer = setTimeout(function () {
+      healthSnapTimer = null;
+      $("main-health").scrollTop = 0;
+    }, HEALTH_SNAP_MS);
+  }
+
+  function scrollHealth(step) {
+    var region = $("main-health");
+    var limit = region.scrollHeight - region.clientHeight;
+    region.scrollTop = Math.max(0, Math.min(limit, region.scrollTop + step * HEALTH_SCROLL_PX));
+    armHealthSnap();
+    armHealthTimers();
   }
 
   function renderTimeline(s) {
@@ -1024,6 +1094,25 @@
     board.style.transform = "scale(" + Math.min(vw / width, vh / BOARD_H) + ")";
   }
 
+  /* Tasks 18 and 19 fill this in. Until then the screen is honest about
+     having nothing: an empty region would read as "all clear". */
+  function renderHealth(s) {
+    var health = s.health || { available: false, detail: "no health data" };
+    var note = $("health-unavailable");
+    var missing = !health.available || !health.document;
+    note.hidden = !missing;
+    if (missing) {
+      text(note, "No health board: " + (health.detail || "unknown"));
+    }
+    ["health-tiles", "health-sleep", "health-exercise", "health-weight", "health-detail"].forEach(
+      function (id) {
+        $(id).hidden = missing;
+      }
+    );
+    $("health-action").hidden = missing;
+    $("health-footer").hidden = missing;
+  }
+
   // --- render + poll ------------------------------------------------------
 
   function render(s) {
@@ -1033,6 +1122,7 @@
     renderWeather(s);
     renderRuns(s);
     renderSystem(s);
+    if (screenName === "health") renderHealth(s);
   }
 
   function poll() {

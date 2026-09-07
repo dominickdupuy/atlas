@@ -155,6 +155,55 @@
             </div>
           </aside>
         </div>
+
+        <!--
+          The health screen (spec §7). A second `main` region, hidden until
+          the dial's top-right key selects it. It is the only scrolling region
+          on the board: everything needed to answer "how did I sleep, how is
+          my heart, what should I change" is above the fold, and the dial
+          reveals detail below it. Still output only — the dial is a device
+          beside the screen, not a control on it.
+        -->
+        <div class="main main-health" id="main-health" hidden>
+          <p class="health-unavailable" id="health-unavailable" hidden></p>
+
+          <section class="health-tiles" id="health-tiles"></section>
+          <section class="health-action" id="health-action"></section>
+
+          <section class="panel health-block" id="health-sleep">
+            <div class="panel-head">
+              <span class="panel-title">SLEEP · 60 NIGHTS</span>
+              <span class="panel-source" id="health-sleep-source">—</span>
+            </div>
+            <div class="health-split" id="health-sleep-body"></div>
+          </section>
+
+          <section class="panel health-block" id="health-exercise">
+            <div class="panel-head">
+              <span class="panel-title">EXERCISE</span>
+              <span class="panel-source" id="health-exercise-source">—</span>
+            </div>
+            <div class="health-split" id="health-exercise-body"></div>
+          </section>
+
+          <section class="panel health-block" id="health-weight">
+            <div class="panel-head">
+              <span class="panel-title">WEIGHT · 60 DAYS</span>
+              <span class="panel-source" id="health-weight-source">—</span>
+            </div>
+            <div class="health-weight-body" id="health-weight-body"></div>
+          </section>
+
+          <section class="panel health-block" id="health-detail">
+            <div class="panel-head">
+              <span class="panel-title">SLEEP DETAIL</span>
+              <span class="panel-source" id="health-detail-source">—</span>
+            </div>
+            <div class="health-split" id="health-detail-body"></div>
+          </section>
+
+          <p class="health-footer" id="health-footer"></p>
+        </div>
       </div>
     </div>
 

@@ -1420,3 +1420,211 @@ body[data-stale="true"] .head-right .deck {
 .sys-val[data-level="crit"] {
   color: var(--red-text);
 }
+
+/* --- health screen -------------------------------------------------------- */
+
+/* The one scrolling region on the board (spec §7). Everything that answers
+   the three questions sits in the first 984px; the dial reveals the rest. */
+.main-health {
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  gap: 12px;
+  scroll-behavior: smooth;
+  /* No pointer here either, and a visible bar on a wall display is noise. */
+  scrollbar-width: none;
+}
+
+.main-health::-webkit-scrollbar {
+  display: none;
+}
+
+.health-unavailable {
+  margin: 0;
+  padding: 22px 24px;
+  border-radius: var(--radius);
+  background: var(--glass);
+  border: 1px solid var(--glass-edge);
+  color: var(--ink-55);
+  font-size: 20px;
+}
+
+.health-tiles {
+  flex: none;
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr 1fr 1fr;
+  gap: 12px;
+  height: 128px;
+}
+
+.health-tile {
+  border-radius: var(--radius);
+  background: var(--glass);
+  border: 1px solid var(--glass-edge);
+  box-shadow: var(--glass-inset);
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.health-tile-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: var(--ink-50);
+}
+
+.health-tile-value {
+  font-size: 40px;
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+}
+
+.health-tile-line {
+  font-size: 13px;
+  color: var(--ink-45);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* State is the whole point of this screen, so it colours values and chips and
+   nothing else: a red border on every panel would say "everything is wrong". */
+[data-state="ALERT"] .health-tile-value,
+.health-state[data-state="ALERT"] {
+  color: var(--red-text);
+}
+
+[data-state="WATCH"] .health-tile-value,
+.health-state[data-state="WATCH"] {
+  color: var(--amber-text);
+}
+
+[data-state="GOOD"] .health-tile-value,
+.health-state[data-state="GOOD"] {
+  color: var(--green-text);
+}
+
+.health-state[data-state="NO DATA"],
+.health-state[data-state="BLANK"] {
+  color: var(--ink-35);
+  font-style: italic;
+}
+
+.health-chips {
+  display: flex;
+  gap: 14px;
+  font-size: 15px;
+  color: var(--ink-60);
+  flex-wrap: wrap;
+}
+
+.health-drivers {
+  font-size: 13px;
+  color: var(--ink-42);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.health-action {
+  flex: none;
+  min-height: 160px;
+  border-radius: var(--radius);
+  background: var(--glass);
+  border: 1px solid var(--glass-edge);
+  box-shadow: var(--glass-inset);
+  padding: 14px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.health-action-line {
+  font-size: 24px;
+  font-weight: 400;
+}
+
+.health-dev {
+  display: grid;
+  grid-template-columns: 220px 110px 1fr 24px 80px;
+  gap: 8px;
+  font-size: 15px;
+  color: var(--ink-55);
+  align-items: baseline;
+}
+
+.health-block {
+  flex: none;
+  padding: 16px 20px;
+  gap: 10px;
+}
+
+.health-split {
+  display: grid;
+  grid-template-columns: 900px 1fr;
+  gap: 16px;
+  min-height: 0;
+}
+
+.health-col {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.health-sub {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--ink-50);
+}
+
+.health-note {
+  font-size: 13px;
+  color: var(--ink-42);
+}
+
+.health-chart {
+  width: 100%;
+  display: block;
+}
+
+.health-footer {
+  flex: none;
+  margin: 0;
+  padding: 0 6px 8px;
+  font-size: 13px;
+  color: var(--ink-35);
+}
+
+.health-rows {
+  display: grid;
+  gap: 4px;
+  font-size: 14px;
+  color: var(--ink-55);
+}
+
+.health-row {
+  display: grid;
+  grid-template-columns: 88px 60px 66px 74px 60px 1fr;
+  gap: 8px;
+  align-items: center;
+}
+
+.health-arrow[data-arrow="up"]::after {
+  content: "^";
+}
+
+.health-arrow[data-arrow="down"]::after {
+  content: "v";
+}
+
+.health-arrow[data-arrow="flat"]::after {
+  content: "-";
+}
