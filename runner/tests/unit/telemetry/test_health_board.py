@@ -24,6 +24,22 @@ def test_unparseable_file_is_unavailable(tmp_path: Path) -> None:
     assert state.available is False and state.document is None
 
 
+def test_a_file_that_is_not_valid_utf8_is_unavailable(tmp_path: Path) -> None:
+    """The mid-write case this reader exists for.
+
+    A document truncated part-way through a write can end inside a multi-byte
+    character. That raises UnicodeDecodeError, which is a ValueError and not an
+    OSError, so it escapes a bare `except OSError` — and an exception here does
+    not degrade the health panel, it fails /api/status, which every other panel
+    on the board renders from.
+    """
+    path = tmp_path / "board.json"
+    path.write_bytes(b'{"schema": 1, "generated_at": "2026-09-07T10:00:00-04:00", "d": "\xff\xfe')
+    state = HealthBoardReader(path, "UTC").read(NOW)
+    assert state.available is False
+    assert state.document is None
+
+
 def test_a_document_of_the_wrong_schema_is_refused(tmp_path: Path) -> None:
     path = tmp_path / "board.json"
     path.write_text(json.dumps({"schema": 99}), encoding="utf-8")

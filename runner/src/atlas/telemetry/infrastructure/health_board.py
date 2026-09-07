@@ -56,7 +56,12 @@ class HealthBoardReader:
     def read(self, now: datetime) -> HealthBoardState:
         try:
             raw = self._path.read_text(encoding="utf-8")
-        except OSError:
+        except (OSError, UnicodeDecodeError):
+            # UnicodeDecodeError is a ValueError, NOT an OSError. A file
+            # truncated mid-write can end on a partial multi-byte sequence, and
+            # catching OSError alone would let that escape — taking /api/status
+            # with it, and blanking every panel on the wall, over a feature
+            # nobody happened to be reading.
             return HealthBoardState(False, f"no health board at {self._path}")
         try:
             document = json.loads(raw)
