@@ -94,6 +94,10 @@ async def application(tmp_path: Path) -> AsyncIterator[Application]:
         # or fails depending on what this machine happened to run today.
         repos_registry=tmp_path / "repos.toml",
         repos_state_dir=tmp_path / "repo-state",
+        # Same reasoning as the repo paths above: the default is a real host
+        # file, and a suite that reads it would pass or fail depending on what
+        # this machine computed last night.
+        health_board_path=tmp_path / "health-board.json",
     )
     app = build_application(settings)
     app.weather_report = FakeWeatherReport()

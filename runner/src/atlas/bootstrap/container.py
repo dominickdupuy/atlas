@@ -41,6 +41,7 @@ from atlas.telemetry.application.display_mode import DisplayModeTracker
 from atlas.telemetry.application.health import HealthService
 from atlas.telemetry.application.publisher import MqttPublisherService
 from atlas.telemetry.application.stream import EventStream
+from atlas.telemetry.infrastructure.health_board import HealthBoardReader
 from atlas.telemetry.infrastructure.hosted_repos import HostedRepoReader
 from atlas.telemetry.infrastructure.mqtt_bus import AiomqttEventBus
 from atlas.telemetry.infrastructure.service_probes import TcpServiceProbe
@@ -72,6 +73,7 @@ class Application:
     metrics: SystemMetricsReader
     probes: tuple[TcpServiceProbe, ...]
     hosted_repos: HostedRepoReader
+    health_board: HealthBoardReader
     started_at: datetime
     version: str
     revision: str
@@ -210,6 +212,7 @@ def build_application(settings: Settings) -> Application:
         hosted_repos=HostedRepoReader(
             settings.repos_registry, settings.repos_state_dir, settings.tz
         ),
+        health_board=HealthBoardReader(settings.health_board_path, settings.tz),
         started_at=clock.now(),
         version=package_version(),
         revision=git_revision(),

@@ -1,0 +1,109 @@
+{
+  "schema": 1,
+  "generated_at": "2026-09-07T10:00:00-04:00",
+  "as_of_night": "2026-09-06",
+  "status": {
+    "overall": "ALERT",
+    "domains": {"sleep": "ALERT", "heart": "OK", "fitness": "WATCH", "weight": "NO DATA"},
+    "drivers": ["bedtime regularity 77 min (vs 30 target)", "easy share 10 % (vs 70 % target)"]
+  },
+  "action": "Bed by 23:50 tonight. Bedtime varies +/-77 min; aim within 30.",
+  "deviations": [
+    {"label": "bedtime regularity", "value": "77 min", "vs_avg": "vs 30 target",
+     "arrow": "up", "state": "ALERT"},
+    {"label": "easy share", "value": "10 %", "vs_avg": "vs 70 % target",
+     "arrow": "down", "state": "WATCH"},
+    {"label": "sleep 7n", "value": "6h35", "vs_avg": "-0.2 h vs avg",
+     "arrow": "down", "state": "OK"},
+    {"label": "HRV 7n", "value": "81 ms", "vs_avg": "+2 ms (z7 +0.2)",
+     "arrow": "up", "state": "GOOD"}
+  ],
+  "signals": [
+    {"key": "S3", "domain": "sleep", "label": "bedtime regularity", "state": "ALERT",
+     "display": "77 min", "vs_avg": "vs 30 target", "z": null, "arrow": "up"},
+    {"key": "F6", "domain": "fitness", "label": "easy share", "state": "WATCH",
+     "display": "10 %", "vs_avg": "vs 70 % target", "z": null, "arrow": "down"}
+  ],
+  "tiles": [
+    {"key": "sleep", "title": "SLEEP", "value": "6h12", "arrow": "down", "state": "WATCH",
+     "lines": ["7n 6h35", "-0.2 h vs avg"]},
+    {"key": "sleep_hr", "title": "SLEEP HR", "value": "49", "arrow": "flat", "state": "OK",
+     "lines": ["60d 50", "min 43"]},
+    {"key": "hrv", "title": "HRV 7n", "value": "81 ms", "arrow": "up", "state": "GOOD",
+     "lines": ["60d 79", "+/-11"]},
+    {"key": "weight", "title": "WEIGHT 7d", "value": "--", "arrow": "flat", "state": "BLANK",
+     "lines": ["no data", "n 0/7"]},
+    {"key": "last_run", "title": "LAST RUN", "value": "2d", "arrow": "flat", "state": "OK",
+     "lines": ["0.7/wk", "tgt 3/wk"]}
+  ],
+  "sleep": {
+    "goal_h": 7.5, "target_bedtime": "23:50", "median_bedtime": 24.67,
+    "mean_7n_min": 395.0, "mean_60d_min": 401.0, "debt_14n_h": 4.2,
+    "bedtime_sd_min": 77.0, "social_jet_lag_h": 1.67,
+    "score": {"duration": 37.0, "consistency": 5.0, "interruptions": 20.0,
+              "total": 62.0, "lever": "consistency"},
+    "nights": [
+      {"date": "2026-09-05", "asleep_min": 402.0, "deep_min": 63.0, "rem_min": 91.0,
+       "core_min": 248.0, "awake_min": 14.0, "interruptions": 2, "naps_min": 0.0,
+       "bedtime": 24.5, "waketime": 7.2, "midsleep": 27.85, "hr_min_frac": 0.42,
+       "state": "OK"},
+      {"date": "2026-09-06", "asleep_min": 372.0, "deep_min": 58.0, "rem_min": 84.0,
+       "core_min": 230.0, "awake_min": 11.0, "interruptions": 3, "naps_min": 0.0,
+       "bedtime": 25.6, "waketime": 7.8, "midsleep": 28.7, "hr_min_frac": 0.74,
+       "state": "WATCH"}
+    ]
+  },
+  "heart": {
+    "sleep_hr_mean_60d": 50.1, "sleep_hr_sd_60d": 3.8, "hrv_mean_60d": 78.6,
+    "hrv_7n_sd": 11.0, "rhr_latest": 52.0, "rhr_60d": 53.0, "resp_latest": 16.4,
+    "hrr_last4": [15.5, 35.9, 29.8, 28.0],
+    "nights": [
+      {"date": "2026-09-05", "sleep_avg_hr": 49.0, "sleep_min_hr": 43.0, "hrv": 84.0,
+       "resp": 16.2, "rhr": 52.0},
+      {"date": "2026-09-06", "sleep_avg_hr": 51.0, "sleep_min_hr": 44.0, "hrv": 78.0,
+       "resp": 16.4, "rhr": null}
+    ]
+  },
+  "exercise": {
+    "zone_edges": [141.2, 155.9, 170.6, 185.3], "hr_max": 200, "rhr_anchor": 53.0,
+    "easy_share_60d": 0.10, "easy_share_target": 0.7, "vdot": 39.1,
+    "capacity": {"metric": "speed_at_hr", "speed_at_hr_latest": 2.9,
+                 "speed_at_hr_vs_avg_pct": 1.0, "speed_at_hr_trend": "flat",
+                 "speed_at_hr_n_of_10": 6, "ef_latest": 0.017, "ef_vs_avg_pct": 0.5,
+                 "hrr_latest": 28.0, "hrr_mean": 32.7, "hrr_sd": 7.0, "hrr_z": -0.67,
+                 "hrr_last4": [15.5, 35.9, 29.8, 28.0], "hrr_n": 24, "f1_z": 0.3,
+                 "capacity_z": -0.2, "durability_28d_min": 28.0, "durability_60d_min": 36.0},
+    "consistency": {"days_since_run": 2, "days_since_strength": 14,
+                    "runs_per_week_4w": 0.75, "strength_per_week_4w": 0.25,
+                    "runs_this_week": 0, "strength_this_week": 0,
+                    "longest_run_gap_60d": 21, "runs_per_week_target": 3,
+                    "strength_per_week_target": 2},
+    "load": {"load_week": 180.0, "load_4w_avg": 95.0, "load_7d": 180.0,
+             "load_28d": 380.0, "acwr": null, "workouts_28d": 4},
+    "weekly": [
+      {"week_start": "2026-08-17", "trimp": 0.0, "runs": 0, "strength": 0, "miles": 0.0},
+      {"week_start": "2026-08-24", "trimp": 145.0, "runs": 3, "strength": 1, "miles": 5.1},
+      {"week_start": "2026-08-31", "trimp": 120.0, "runs": 2, "strength": 0, "miles": 4.4},
+      {"week_start": "2026-09-07", "trimp": 0.0, "runs": 0, "strength": 0, "miles": 0.0}
+    ],
+    "runs": [
+      {"date": "2026-09-05", "miles": 2.41, "pace_min_mi": 11.6, "avg_hr": 162.0,
+       "max_hr": 194.0, "hrr": 28.0, "speed_at_hr": 2.9, "ef": 0.0176,
+       "zones": [0.0, 2.0, 12.0, 12.0, 2.0], "state": "WATCH"},
+      {"date": "2026-09-01", "miles": 2.01, "pace_min_mi": 8.5, "avg_hr": 183.0,
+       "max_hr": 198.0, "hrr": 29.8, "speed_at_hr": null, "ef": 0.0181,
+       "zones": [0.0, 0.0, 1.0, 8.0, 8.0], "state": "WATCH"}
+    ]
+  },
+  "weight": {
+    "readings": [], "last_kg": 81.6, "last_date": "2026-01-08", "n_7": 0, "n_28": 0,
+    "weight_7d": null, "weight_28d": null, "week_change": null, "bmi": null,
+    "weigh_ins_7d": 0, "drift_kg": null, "bmi_stale": true
+  },
+  "coverage": {
+    "nights_with_data_7": 4, "nights_with_data_60": 20, "weigh_ins_7d": 0,
+    "last_import_at": "2026-09-07 07:12:00-04:00",
+    "last_hr_sample_at": "2026-09-07 06:58:00-04:00",
+    "last_weight_at": "2026-01-08"
+  }
+}

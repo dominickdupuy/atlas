@@ -66,6 +66,10 @@ class Settings(BaseSettings):
     repos_registry: Path = Path("/opt/atlas/infra/repos.toml")
     repos_state_dir: Path = Path("/var/lib/atlas-repos")
 
+    # Written nightly by the health/ package (a hosted repo, not an atlas job).
+    # The runner only ever READS it: nothing here computes health.
+    health_board_path: Path = Path("/var/lib/atlas-health/board.json")
+
     mqtt_host: str = "127.0.0.1"
     mqtt_port: int = 1883
 
