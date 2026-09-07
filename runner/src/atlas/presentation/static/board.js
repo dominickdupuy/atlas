@@ -1114,6 +1114,59 @@
     });
   }
 
+  /* The y range a chart actually needs.
+
+     Every health chart used to carry a hardcoded min and max, which is fine
+     until the body does something unusual -- and the unusual reading is the
+     one worth seeing. An HRV night of 163 ms against a ceiling of 140 does not
+     draw at 140; SVG clips it, so the line leaves the top of the chart and
+     comes back further along, which reads as a broken line rather than as a
+     good night. The nominal range stays the default, so the scale is stable
+     day to day and a glance means the same thing it meant yesterday; it only
+     widens, with a little padding, when real data sits outside it. */
+  function healthDomain(values, min, max) {
+    var lo = min;
+    var hi = max;
+    var pad = (max - min) * 0.05 || 1;
+    values.forEach(function (value) {
+      if (value === null || value === undefined || isNaN(value)) return;
+      if (value < lo) lo = value - pad;
+      if (value > hi) hi = value + pad;
+    });
+    return { min: lo, max: hi };
+  }
+
+  /* Tick labels down the left, inside a gutter the plot leaves for them.
+
+     A sparkline without one asks the reader to take the shape on trust: a dip
+     could be four milliseconds or forty. Three ticks is the most this size can
+     carry legibly, and the gutter is part of the declared width, so adding an
+     axis never changes what a chart costs in the vertical budget. */
+  var HEALTH_AXIS_GUTTER = 38;
+
+  function healthYAxis(svg, width, height, min, max, format) {
+    [0, 0.5, 1].forEach(function (fraction) {
+      var value = min + (max - min) * fraction;
+      var y = height - fraction * height;
+      svg.appendChild(
+        svgEl("line", {
+          x1: String(HEALTH_AXIS_GUTTER), x2: String(width),
+          y1: String(y), y2: String(y),
+          class: "health-grid", "vector-effect": "non-scaling-stroke",
+        })
+      );
+      var label = svgEl("text", {
+        x: String(HEALTH_AXIS_GUTTER - 6),
+        // Nudge the end labels inward so neither is half cut off by the edge.
+        y: String(Math.min(height - 2, Math.max(9, y + 3))),
+        class: "health-axis-label",
+        "text-anchor": "end",
+      });
+      label.textContent = format(value);
+      svg.appendChild(label);
+    });
+  }
+
   function num(value, digits, fallback) {
     if (value === null || value === undefined || isNaN(value)) return fallback || "—";
     return Number(value).toFixed(digits === undefined ? 0 : digits);
@@ -1147,60 +1200,87 @@
   }
 
   /* A line over a fixed number of slots, with gaps where a value is missing.
-     `options`: {width, height, values (array of number|null), min, max, band}
-     where `band` is an optional {low, high} shaded range. */
+     `options`: {width, height, values (array of number|null), min, max, band,
+     format} where `band` is an optional {low, high} shaded range and `format`
+     renders an axis label. min/max are the nominal range, not a clamp -- see
+     healthDomain. */
   function sparkline(options) {
     var w = options.width;
     var h = options.height;
     var svg = healthSvg(w, h);
     var values = options.values;
-    var min = options.min;
-    var max = options.max;
+    var domain = healthDomain(values, options.min, options.max);
+    var min = domain.min;
+    var max = domain.max;
     var span = max - min || 1;
-    var step = values.length > 1 ? w / (values.length - 1) : w;
+    var plotLeft = HEALTH_AXIS_GUTTER;
+    var plotWidth = w - plotLeft;
+    var step = values.length > 1 ? plotWidth / (values.length - 1) : plotWidth;
 
     function y(value) {
       return h - ((value - min) / span) * h;
     }
 
+    function x(index) {
+      return plotLeft + index * step;
+    }
+
+    healthYAxis(svg, w, h, min, max, options.format || function (value) {
+      return num(value, 0);
+    });
+
     if (options.band) {
       svg.appendChild(
         svgEl("rect", {
-          x: "0",
+          x: String(plotLeft),
           y: String(y(options.band.high)),
-          width: String(w),
+          width: String(plotWidth),
           height: String(Math.max(1, y(options.band.low) - y(options.band.high))),
           class: "health-band",
         })
       );
     }
 
-    var run = [];
-    values.forEach(function (value, index) {
-      if (value === null || value === undefined) {
-        if (run.length > 1) {
-          svg.appendChild(
-            svgEl("polyline", {
-              points: run.join(" "),
-              class: "health-line",
-              "vector-effect": "non-scaling-stroke",
-            })
-          );
-        }
-        run = [];
+    /* A run of one is a real night with real data, and a polyline of a single
+       point draws nothing at all -- so those nights used to vanish from the
+       chart entirely. On this data that is two nights per chart: present in
+       the document, invisible on the wall, and indistinguishable from a night
+       the watch was not worn. A dot says "measured, and isolated", which is
+       what the reader needs to know. Runs are still never bridged across a
+       gap: a line over nights with no data would be inventing them. */
+    function flush(run) {
+      if (run.length === 0) return;
+      if (run.length === 1) {
+        svg.appendChild(
+          svgEl("circle", {
+            cx: String(run[0][0]), cy: String(run[0][1]), r: "2.2",
+            class: "health-point",
+          })
+        );
         return;
       }
-      run.push(index * step + "," + y(value));
-    });
-    if (run.length > 1) {
+      var points = run.map(function (pair) {
+        return pair[0] + "," + pair[1];
+      });
       svg.appendChild(
         svgEl("polyline", {
-          points: run.join(" "),
+          points: points.join(" "),
           class: "health-line",
           "vector-effect": "non-scaling-stroke",
         })
       );
     }
+
+    var run = [];
+    values.forEach(function (value, index) {
+      if (value === null || value === undefined || isNaN(value)) {
+        flush(run);
+        run = [];
+        return;
+      }
+      run.push([x(index), y(value)]);
+    });
+    flush(run);
     return svg;
   }
 
@@ -1295,23 +1375,28 @@
       byDate[night.date] = night;
     });
     var top = 600; // 10 h; every recorded night fits, and the goal line lands high
-    var slot = width / keys.length;
+    var plotLeft = HEALTH_AXIS_GUTTER;
+    var slot = (width - plotLeft) / keys.length;
     var barWidth = Math.max(4, slot - 3);
 
     function y(minutes) {
       return height - (Math.min(minutes, top) / top) * height;
     }
 
+    healthYAxis(svg, width, height, 0, top, function (minutes) {
+      return num(minutes / 60, 0) + "h";
+    });
+
     var goal = doc.sleep.goal_h * 60;
     svg.appendChild(
       svgEl("line", {
-        x1: "0", x2: String(width), y1: String(y(goal)), y2: String(y(goal)),
+        x1: String(plotLeft), x2: String(width), y1: String(y(goal)), y2: String(y(goal)),
         class: "health-goal", "vector-effect": "non-scaling-stroke",
       })
     );
 
     keys.forEach(function (key, index) {
-      var x = index * slot;
+      var x = plotLeft + index * slot;
       var night = byDate[key];
       if (!night) {
         svg.appendChild(
@@ -1365,7 +1450,7 @@
     var points = [];
     means.forEach(function (value, index) {
       if (value === null) return;
-      points.push(index * slot + slot / 2 + "," + y(value));
+      points.push(plotLeft + index * slot + slot / 2 + "," + y(value));
     });
     if (points.length > 1) {
       svg.appendChild(
@@ -1443,6 +1528,7 @@
       sparkline({
         width: 440, height: 90, values: hrv,
         min: 20, max: 140,
+        format: function (value) { return num(value, 0); },
         band: hrvMean === null ? null : { low: hrvMean - hrvSd, high: hrvMean + hrvSd },
       })
     );
@@ -1698,20 +1784,32 @@
       return;
     }
 
+    // The 7d and 28d lines are drawn on this axis too, so they have to be
+    // inside it -- a mean sitting outside the range of the dots it summarises
+    // would be clipped away, and its absence would read as "not measured".
+    var bounds = [weight.weight_7d, weight.weight_28d].concat(values);
     var low = Math.min.apply(null, values) - 1;
     var high = Math.max.apply(null, values) + 1;
-    var slot = width / keys.length;
+    var domain = healthDomain(bounds, low, high);
+    low = domain.min;
+    high = domain.max;
+    var plotLeft = HEALTH_AXIS_GUTTER;
+    var slot = (width - plotLeft) / keys.length;
 
     function y(kg) {
       return height - ((kg - low) / (high - low || 1)) * height;
     }
+
+    healthYAxis(svg, width, height, low, high, function (kg) {
+      return num(kg, 1);
+    });
 
     keys.forEach(function (key, index) {
       var kg = byDate[key];
       if (kg === undefined) return;
       svg.appendChild(
         svgEl("circle", {
-          cx: String(index * slot + slot / 2), cy: String(y(kg)), r: "3",
+          cx: String(plotLeft + index * slot + slot / 2), cy: String(y(kg)), r: "3",
           class: "health-dot",
         })
       );
@@ -1723,7 +1821,8 @@
       if (line.value === null || line.value === undefined) return;
       svg.appendChild(
         svgEl("line", {
-          x1: "0", x2: String(width), y1: String(y(line.value)), y2: String(y(line.value)),
+          x1: String(plotLeft), x2: String(width),
+          y1: String(y(line.value)), y2: String(y(line.value)),
           class: line.cls, "vector-effect": "non-scaling-stroke",
         })
       );
@@ -1826,6 +1925,8 @@
           return night.hr_min_frac;
         }),
         min: 0, max: 1, band: { low: 0.5, high: 0.7 },
+        // A fraction of the night, so a percentage reads better than "0".
+        format: function (value) { return num(value * 100, 0) + "%"; },
       })
     );
     right.appendChild(

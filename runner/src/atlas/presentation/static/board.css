@@ -1661,6 +1661,23 @@ body[data-stale="true"] .head-right .deck {
   fill: rgba(124, 192, 255, 0.12);
 }
 
+.health-grid {
+  stroke: rgba(226, 238, 252, 0.14);
+  stroke-width: 1;
+}
+
+.health-axis-label {
+  fill: var(--ink-35);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A night whose neighbours have no data. A two-point polyline is a line; a
+   one-point polyline is nothing at all, so these are drawn as dots. */
+.health-point {
+  fill: var(--cyan);
+}
+
 .health-line {
   fill: none;
   stroke: var(--cyan);
