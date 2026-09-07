@@ -1114,6 +1114,17 @@
     return Number(value).toFixed(digits === undefined ? 0 : digits);
   }
 
+  /* Scale a value that may be absent, checking BEFORE the arithmetic.
+     num() catches null, but only if it is handed the null. JavaScript
+     coerces `null / 60` and `null * 100` to 0, so scaling first turns
+     "no data" into a confident "0.0 h" or "0 %" — a fabricated number
+     presented as a real one, on a screen whose whole worth is that you
+     can trust it at a glance. */
+  function scaled(value, factor, digits) {
+    if (value === null || value === undefined || isNaN(value)) return "—";
+    return num(value * factor, digits);
+  }
+
   /* The last `days` calendar dates ending at the document's own timestamp, as
      YYYY-MM-DD. The night lists carry only nights the watch was worn, so the
      charts need the calendar to put a gap where a night is missing — which is
@@ -1469,8 +1480,9 @@
     host.appendChild(right);
     text(
       $("health-sleep-source"),
-      "7n " + num(doc.sleep.mean_7n_min / 60, 1) + " h · 60d " +
-        num(doc.sleep.mean_60d_min / 60, 1) + " h · debt " + num(doc.sleep.debt_14n_h, 1) + " h"
+      "7n " + scaled(doc.sleep.mean_7n_min, 1 / 60, 1) + " h · 60d " +
+        scaled(doc.sleep.mean_60d_min, 1 / 60, 1) + " h · debt " +
+        num(doc.sleep.debt_14n_h, 1) + " h"
     );
   }
 
