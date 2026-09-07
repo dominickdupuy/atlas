@@ -1609,17 +1609,24 @@
     );
     left.appendChild(el("div", "health-sub", "LOAD · 8 WEEKS (Edwards TRIMP)"));
     left.appendChild(loadBars(ex.weekly || []));
-    left.appendChild(
-      el(
-        "div",
-        "health-note",
-        "this week " + num(load.load_week, 0) + " · 4-wk avg " + num(load.load_4w_avg, 0) +
-          " · " +
-          (load.acwr === null
-            ? "ACWR hidden (needs 8 workouts in 28 d, have " + load.workouts_28d + ")"
-            : "ACWR " + num(load.acwr, 2) + " (caution band, not a rule)")
-      )
+    var acwrNote = el(
+      "div",
+      "health-note",
+      "this week " + num(load.load_week, 0) + " · 4-wk avg " + num(load.load_4w_avg, 0) +
+        " · " +
+        (load.acwr === null
+          ? "ACWR hidden (needs 8 workouts in 28 d, have " + load.workouts_28d + ")"
+          : "ACWR " + num(load.acwr, 2) + " (caution band, not a rule)")
     );
+    /* Spec 4.7: 0.8 to 1.3 neutral, above 1.5 red. The band colours this one
+       line and nothing else — no chip, no domain state, no push. The ACWR
+       "sweet spot" is contested enough that the spec calls it a caution
+       rather than a rule, and a metric that cannot be trusted to raise an
+       alarm should not be allowed to raise one. */
+    if (load.acwr !== null && load.acwr > 1.5) {
+      acwrNote.setAttribute("data-state", "ALERT");
+    }
+    left.appendChild(acwrNote);
     host.appendChild(left);
 
     var right = el("div", "health-col");

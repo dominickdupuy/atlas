@@ -1744,3 +1744,9 @@ rect[data-state="ALERT"] {
 .health-row[data-state="ALERT"] {
   color: var(--red-text);
 }
+
+/* The ACWR caution band (spec 4.7). Colours the note itself rather than
+   promoting it to a state chip: it is a caution, not a rule. */
+.health-note[data-state="ALERT"] {
+  color: var(--red-text);
+}
