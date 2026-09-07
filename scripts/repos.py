@@ -44,7 +44,21 @@ LOG_ROOT = Path(os.environ.get("REPOS_LOG_DIR", "/var/log/atlas-repos"))
 STATE_ROOT = Path(os.environ.get("REPOS_STATE_DIR", "/var/lib/atlas-repos"))
 CRON_FILE = Path("/etc/cron.d/atlas-repos")
 UNIT_DIR = Path("/etc/systemd/system")
-USER = os.environ.get("REPOS_USER") or os.environ.get("USER") or "domdd"
+# The account that owns the checkouts, the logs, and every rendered cron line.
+#
+# SUDO_USER comes before USER because `apply` shells out to `sudo` for the few
+# root-only steps, and a well-meaning `sudo repos.py apply` would otherwise
+# resolve to root: the cron lines would be rewritten to run as root with
+# HOME=/home/root (a directory that does not exist), and the clones would use
+# root's ~/.ssh/config, which has none of the per-repo deploy-key aliases. The
+# failure is quiet — apply logs the clone error and carries on to install a
+# cron file that is wrong for every repo, including ones that were working.
+USER = (
+    os.environ.get("REPOS_USER")
+    or os.environ.get("SUDO_USER")
+    or os.environ.get("USER")
+    or "domdd"
+)
 KEEP_LOGS = 60
 
 
@@ -363,6 +377,17 @@ def sudo(*args: str) -> None:
 
 
 def apply() -> int:
+    # Refuse to own anything as root. apply() clones with the invoking account's
+    # ssh config and stamps that account into every cron line; as root both are
+    # wrong, and the result is an installed cron file that silently breaks repos
+    # that were working. Run it as the owning user and let it call sudo itself.
+    if USER == "root":
+        sys.exit(
+            "repos.py apply must not run as root: it would clone with root's "
+            "ssh config and render every cron line to run as root.\n"
+            "Run it as the owning account instead, priming sudo first:\n"
+            "    sudo -v && /opt/atlas/scripts/repos.py apply"
+        )
     repos = load_registry()
     for d in (LOG_ROOT, STATE_ROOT):
         if not d.exists():
