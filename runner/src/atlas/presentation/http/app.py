@@ -34,12 +34,18 @@ def create_app(application: Application) -> FastAPI:
     @contextlib.asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         await application.start_persistence()
+        if application.lights is not None:
+            await application.lights.start()
         tasks = [
             asyncio.create_task(application.scheduler.run(), name="scheduler"),
             asyncio.create_task(application.mqtt.run(), name="mqtt"),
             asyncio.create_task(application.sweep.run(), name="approval-sweep"),
             asyncio.create_task(application.health.run(), name="heartbeat"),
         ]
+        if application.matter is not None:
+            tasks.append(asyncio.create_task(application.matter.run(), name="matter"))
+        if application.lights is not None:
+            tasks.append(asyncio.create_task(application.lights.run(), name="lights-reconcile"))
         logger.info("atlas runner up (profile=%s)", application.settings.profile)
         try:
             yield

@@ -18,6 +18,7 @@ from atlas.connectors.application.ports import DayForecast, HourlyConditions, We
 from atlas.presentation.http.app import create_app
 
 FIXTURE_JOBS = Path(__file__).parent.parent / "fixtures" / "jobs"
+FIXTURE_LIGHTS = Path(__file__).parent.parent / "fixtures" / "lights.yaml"
 
 API_TOKEN = "test-token"
 AUTH = {"Authorization": f"Bearer {API_TOKEN}"}
@@ -98,10 +99,14 @@ async def application(tmp_path: Path) -> AsyncIterator[Application]:
         # file, and a suite that reads it would pass or fail depending on what
         # this machine computed last night.
         health_board_path=tmp_path / "health-board.json",
+        matter_ws_url="stub",
+        lights_file=FIXTURE_LIGHTS,
     )
     app = build_application(settings)
     app.weather_report = FakeWeatherReport()
     await app.start_persistence()
+    if app.lights is not None:
+        await app.lights.start()
     yield app
     await app.db.close()
 

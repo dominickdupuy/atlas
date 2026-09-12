@@ -18,6 +18,7 @@ from atlas.approvals.infrastructure.payload_executor import (
 )
 from atlas.approvals.infrastructure.sqlite_repo import SqliteApprovalRepository
 from atlas.bootstrap.connectors_factory import build_connectors, build_notifier, gateway_for
+from atlas.bootstrap.lights_factory import build_lights, matter_probe
 from atlas.budget.application.service import BudgetService
 from atlas.budget.domain.ledger import usd
 from atlas.budget.infrastructure.pricing import StaticPricingTable
@@ -33,6 +34,8 @@ from atlas.jobs.domain.definition import JobDefinition
 from atlas.jobs.infrastructure.sqlite_run_repo import SqliteJobRunRepository
 from atlas.jobs.infrastructure.subprocess_launcher import SubprocessJobLauncher
 from atlas.jobs.infrastructure.yaml_source import YamlJobDefinitionSource
+from atlas.lights.application.service import LightsService
+from atlas.lights.infrastructure.matter_ws import MatterWsClient
 from atlas.persistence.db import Database
 from atlas.shared.build_info import git_revision, package_version
 from atlas.shared.clock import Clock, SystemClock
@@ -74,6 +77,8 @@ class Application:
     probes: tuple[TcpServiceProbe, ...]
     hosted_repos: HostedRepoReader
     health_board: HealthBoardReader
+    lights: LightsService | None
+    matter: MatterWsClient | None
     started_at: datetime
     version: str
     revision: str
@@ -174,10 +179,16 @@ def build_application(settings: Settings) -> Application:
         else None
     )
 
-    probes = (
+    lights, matter = build_lights(settings, bus, clock)
+
+    probe_list = [
         TcpServiceProbe("homeassistant", settings.homeassistant_host, settings.homeassistant_port),
         TcpServiceProbe("mosquitto", settings.mqtt_host, settings.mqtt_port),
-    )
+    ]
+    matter_service_probe = matter_probe(settings)
+    if matter_service_probe is not None:
+        probe_list.append(matter_service_probe)
+    probes = tuple(probe_list)
 
     mqtt = AiomqttEventBus(settings.mqtt_host, settings.mqtt_port)
     MqttPublisherService(bus, mqtt)
@@ -213,6 +224,8 @@ def build_application(settings: Settings) -> Application:
             settings.repos_registry, settings.repos_state_dir, settings.tz
         ),
         health_board=HealthBoardReader(settings.health_board_path, settings.tz),
+        lights=lights,
+        matter=matter,
         started_at=clock.now(),
         version=package_version(),
         revision=git_revision(),
