@@ -36,7 +36,6 @@ from atlas.jobs.infrastructure.sqlite_run_repo import SqliteJobRunRepository
 from atlas.jobs.infrastructure.subprocess_launcher import SubprocessJobLauncher
 from atlas.jobs.infrastructure.yaml_source import YamlJobDefinitionSource
 from atlas.lights.application.service import LightsService
-from atlas.lights.application.tools import LightsTools
 from atlas.lights.infrastructure.matter_ws import MatterWsClient
 from atlas.persistence.db import Database
 from atlas.shared.build_info import git_revision, package_version
@@ -111,14 +110,18 @@ def build_application(settings: Settings) -> Application:
     ledger_repo = SqliteBudgetLedgerRepository(db)
 
     lights, matter = build_lights(settings, bus, clock)
-    lights_tools = LightsTools(lights) if lights else None
 
+    # Spec §13: exposing lights to tier 2/3 jobs is explicitly out of scope.
+    # Voice reaches lights through its own gateway (voice_factory.py); job
+    # gateways are built with lights=None, the ToolGateway default, so a
+    # job's allowlist can never actuate a bulb even if it names lights.* by
+    # mistake.
     payload_executor = ToolGatewayPayloadExecutor(
         lookup=catalog.get,
-        gateway_factory=lambda definition: gateway_for(definition, connectors, lights=lights_tools),
+        gateway_factory=lambda definition: gateway_for(definition, connectors),
     )
     write_executor = DirectWriteExecutor(
-        gateway_factory=lambda definition: gateway_for(definition, connectors, lights=lights_tools)
+        gateway_factory=lambda definition: gateway_for(definition, connectors)
     )
 
     # Budget needs to pause the scheduler; the scheduler needs the execute
