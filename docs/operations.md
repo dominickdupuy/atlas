@@ -101,23 +101,30 @@ covers reboots.
 
 ```sh
 cd /opt/atlas && docker compose --profile matter up -d matter-server
-docker compose logs -f matter-server        # first start migrates nothing; expect "listening on 127.0.0.1:5580"
+docker compose logs -f matter-server        # first start migrates nothing; expect a line showing it listening on 127.0.0.1:5580
 ```
 
 ### Commissioning a bulb that lives in Apple Home
 
-The bulbs stay in Apple Home; atlas joins as a second admin. Per bulb:
+The bulbs stay in Apple Home; atlas joins as a second admin. `atlas lights`
+opens its own short-lived connection to the controller, so it needs
+`ATLAS_MATTER_WS_URL` even though the CLI is run by hand: that variable
+lives in `/etc/atlas/atlas.env`, which systemd loads for the `atlas`
+service but an interactive shell does not, so each command below sets it
+inline. Per bulb:
 
 1. Home app, the bulb, settings, **Turn On Pairing Mode**. Note the code.
-2. On atlas, from `/opt/atlas/runner`: `uv run --frozen atlas lights commission <code>`.
+2. On atlas, from `/opt/atlas/runner`:
+   `ATLAS_MATTER_WS_URL=ws://127.0.0.1:5580/ws uv run --frozen atlas lights commission <code>`.
    The controller finds the bulb on the LAN and prints the new node ID.
-3. `uv run --frozen atlas lights identify <node_id>` blinks it. Add it to
-   `lights.yaml` under its name (`ceiling-1` to `ceiling-4`).
+3. `ATLAS_MATTER_WS_URL=ws://127.0.0.1:5580/ws uv run --frozen atlas lights identify <node_id>`
+   blinks it. Add it to `lights.yaml` under its name (`ceiling-1` to `ceiling-4`).
 4. After all four: commit `lights.yaml`, `sudo systemctl restart atlas`.
 
-`uv run --frozen atlas lights nodes` lists what the controller knows, with names.
-A failed commission prints the controller's error name; `NodeCommissionFailed`
-usually means the Apple Home pairing window expired. Open it again and retry.
+`ATLAS_MATTER_WS_URL=ws://127.0.0.1:5580/ws uv run --frozen atlas lights nodes` lists
+what the controller knows, with names. A failed commission prints the
+controller's error name; `NodeCommissionFailed` usually means the Apple
+Home pairing window expired. Open it again and retry.
 
 ### Controller dashboard
 

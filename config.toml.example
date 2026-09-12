@@ -26,6 +26,11 @@ jobs_dir = "/opt/atlas/jobs"
 # Light names, node IDs, groups, scenes. Node IDs start as placeholders and
 # are filled in as each bulb is commissioned. Default is fine on the Pi.
 # lights_file = "../lights.yaml"
+# The Matter controller's WebSocket URL is not a secret (it's a loopback
+# address, not a credential), so it may live here instead of atlas.env -
+# doing so lets `atlas lights ...` work from an interactive shell without
+# exporting ATLAS_MATTER_WS_URL by hand each time.
+# matter_ws_url = "ws://127.0.0.1:5580/ws"
 
 mqtt_host = "127.0.0.1"
 mqtt_port = 1883
