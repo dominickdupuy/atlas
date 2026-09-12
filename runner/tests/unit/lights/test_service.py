@@ -14,6 +14,7 @@ from atlas.lights.application.ports import ControllerUnavailable
 from atlas.lights.application.registry import LightsRegistry
 from atlas.lights.application.service import LightsService, UnknownLight, UnknownScene
 from atlas.lights.domain.events import ControllerConnectivityChanged, LightChanged
+from atlas.lights.domain.matter import LEVEL_CLUSTER
 from atlas.lights.domain.model import LightCommand, UnsupportedFeature
 from atlas.lights.infrastructure.stub_controller import StubMatterController
 from atlas.shared.clock import FrozenClock
@@ -173,3 +174,101 @@ async def test_reconciliation_reads_and_corrects_a_missed_report() -> None:
         await service.run()
     assert slept[0] == 300.0
     assert service.get("ceiling-1").on is True
+
+
+# --- fix round 1 -----------------------------------------------------------
+
+
+async def test_disconnect_during_apply_never_confirms() -> None:
+    """A disconnect sets every pending waiter, but that is a wake, not a
+    confirmation: the state never actually satisfied the command."""
+    stub = StubMatterController()
+
+    async def silent_send(*args: object, **kwargs: object) -> None:
+        return None
+
+    stub.send = silent_send  # type: ignore[method-assign]
+    service, _, _, _ = await _service(stub, confirm_timeout=1.0)
+
+    async def disconnect_soon() -> None:
+        await asyncio.sleep(0)
+        await service.on_disconnected()
+
+    disconnector = asyncio.create_task(disconnect_soon())
+    state, confirmed = await service._apply("ceiling-1", LightCommand(on=True))
+    await disconnector
+    assert confirmed is False, "a disconnect wake must never confirm"
+    assert state.on is False
+
+
+async def test_disconnect_during_activate_reports_failure() -> None:
+    stub = StubMatterController()
+
+    async def silent_send(*args: object, **kwargs: object) -> None:
+        return None
+
+    stub.send = silent_send  # type: ignore[method-assign]
+    service, _, _, _ = await _service(stub, confirm_timeout=1.0)
+
+    async def disconnect_soon() -> None:
+        await asyncio.sleep(0)
+        await service.on_disconnected()
+
+    disconnector = asyncio.create_task(disconnect_soon())
+    result = await service.activate("night")
+    await disconnector
+    assert "ceiling-1" in result.failed
+
+
+async def test_removed_node_requires_recommissioning_before_apply() -> None:
+    """A removed light takes the never-seen fast path: no cached
+    capabilities, so a command against it is a 503, not a plan()."""
+    service, stub, _, _ = await _service()
+    await stub.remove_node(2)
+    with pytest.raises(ControllerUnavailable, match="ceiling-2"):
+        await service.apply("ceiling-2", LightCommand(on=True))
+
+
+async def test_apply_partial_multi_command_confirmation_is_not_confirmed() -> None:
+    """A multi-command apply must wait for every field it asked for, not
+    return on the first attribute event: colour and power confirm, but the
+    level command is silently dropped, so the whole apply must fail."""
+    stub = StubMatterController()
+    original_send = stub.send
+
+    async def level_silent_send(
+        node_id: int, endpoint_id: int, cluster_id: int, name: str, payload: dict[str, int]
+    ) -> None:
+        if cluster_id == LEVEL_CLUSTER:
+            return None  # never confirms brightness
+        await original_send(node_id, endpoint_id, cluster_id, name, payload)
+
+    stub.send = level_silent_send  # type: ignore[method-assign]
+    service, _, _, _ = await _service(stub, confirm_timeout=0.05)
+
+    state = await service.apply("ceiling-1", LightCommand(brightness=40, color_temp_k=2700))
+    assert state.brightness == 100, "unconfirmed: brightness keeps the last confirmed value"
+    assert state.on is True
+    assert state.color_temp_k == 2703
+
+    result = await service.activate("evening")
+    assert "ceiling-1" in result.failed
+
+
+async def test_apply_already_satisfied_confirms_without_waiting() -> None:
+    """A bulb already in the requested state confirms with no attribute
+    event at all: `send` is silent throughout, yet the multi-field command
+    it carries is already true of the device."""
+    stub = StubMatterController()
+    node = stub._nodes[1]
+    stub._nodes[1] = node.model_copy(update={"attributes": {**node.attributes, "1/6/0": True}})
+
+    async def silent_send(*args: object, **kwargs: object) -> None:
+        return None
+
+    stub.send = silent_send  # type: ignore[method-assign]
+    service, _, _, _ = await _service(stub, confirm_timeout=0.05)
+    state, confirmed = await service._apply("ceiling-1", LightCommand(brightness=100))
+    assert confirmed is True
+    assert state.on is True
+    assert state.brightness == 100

@@ -197,3 +197,37 @@ def plan(
         ClusterCommand(endpoint_id=endpoint, cluster_id=ONOFF_CLUSTER, name="on", payload={})
     )
     return commands
+
+
+def satisfies(state: LightState, command: LightCommand) -> bool:
+    """Whether a device-reported state reflects everything a command asked
+    for, within measurement rounding tolerance.
+
+    Used to decide when an in-flight apply is confirmed: confirmation means
+    the state now matches the request, not merely that some attribute
+    changed (a partial confirmation, or a disconnect wake, must not count).
+    Fields the command leaves unset are ignored. `on=False` checks only
+    power: the rest of a "turn off" command's fields are noise.
+    """
+    if command.on is False:
+        return state.on is False
+    if command.on is True and state.on is not True:
+        return False
+    if command.brightness is not None and (
+        state.brightness is None or abs(state.brightness - command.brightness) > 1
+    ):
+        return False
+    if command.color_temp_k is not None:
+        tolerance = max(command.color_temp_k * 0.02, 60)
+        if state.color_temp_k is None or abs(state.color_temp_k - command.color_temp_k) > tolerance:
+            return False
+    if command.hue is not None:
+        if state.hue is None:
+            return False
+        diff = abs(state.hue - command.hue) % 360
+        if min(diff, 360 - diff) > 3:
+            return False
+    return not (
+        command.saturation is not None
+        and (state.saturation is None or abs(state.saturation - command.saturation) > 2)
+    )

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 
@@ -22,7 +23,13 @@ from atlas.lights.application.ports import (
 )
 from atlas.lights.application.registry import LightsRegistry
 from atlas.lights.domain.events import ControllerConnectivityChanged, LightChanged
-from atlas.lights.domain.matter import RELEVANT_CLUSTERS, capabilities_from, decode, plan
+from atlas.lights.domain.matter import (
+    RELEVANT_CLUSTERS,
+    capabilities_from,
+    decode,
+    plan,
+    satisfies,
+)
 from atlas.lights.domain.model import (
     Light,
     LightCapabilities,
@@ -191,6 +198,7 @@ class LightsService:
             return
         entry = self._entries[light.name]
         entry.available = False
+        entry.capabilities = None
         await self._refresh(entry)
 
     async def on_attribute(self, node_id: int, path: str, value: JsonValue) -> None:
@@ -244,10 +252,13 @@ class LightsService:
     async def _apply(self, name: str, command: LightCommand) -> tuple[LightState, bool]:
         """Send the plan and wait, bounded, for the device to confirm it.
 
-        The bool reports whether the confirmation arrived before the
-        timeout; `activate` needs that (not just an unchanged state, which a
-        bulb already in the requested state would also produce) to tell a
-        confirmed no-op from a failed one.
+        The bool reports whether the resulting state satisfies the command
+        before the timeout; `activate` needs that (not just an unchanged
+        state, which a bulb already in the requested state would also
+        produce) to tell a confirmed no-op from a failed one. It is *not*
+        "an attribute-change event fired": a multi-command apply can wake on
+        a partial confirmation, and a disconnect wakes every waiter without
+        confirming anything.
         """
         entry = self._entry(name)
         if not self._connected:
@@ -266,16 +277,43 @@ class LightsService:
                     cluster_command.name,
                     cluster_command.payload,
                 )
-            # Wait, bounded, for the device to confirm; the stub confirms
-            # synchronously inside send(), a real bulb a few hundred ms later.
-            try:
-                async with asyncio.timeout(self._confirm_timeout):
-                    await confirmed.wait()
-            except TimeoutError:
-                logger.warning("%s: no confirmation within %.1fs", name, self._confirm_timeout)
+            ok = await self._await_satisfied(entry, command, confirmed)
         finally:
             entry.waiters.remove(confirmed)
-        return entry.state, confirmed.is_set()
+        return entry.state, ok
+
+    async def _await_satisfied(
+        self, entry: _Entry, command: LightCommand, confirmed: asyncio.Event
+    ) -> bool:
+        """Wait, bounded, until `entry.state` satisfies `command`.
+
+        Checked before ever waiting, so a bulb already in the requested
+        state confirms with no event at all. Each wake (a real attribute
+        change, a partial confirmation, or a disconnect) rechecks rather
+        than trusting the event; a wake found while disconnected never
+        confirms.
+        """
+        deadline = time.monotonic() + self._confirm_timeout
+        while True:
+            if satisfies(entry.state, command):
+                return True
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                logger.warning(
+                    "%s: no confirmation within %.1fs", entry.light.name, self._confirm_timeout
+                )
+                return False
+            try:
+                async with asyncio.timeout(remaining):
+                    await confirmed.wait()
+            except TimeoutError:
+                logger.warning(
+                    "%s: no confirmation within %.1fs", entry.light.name, self._confirm_timeout
+                )
+                return False
+            if not self._connected:
+                return False
+            confirmed.clear()
 
     async def toggle(self, name: str) -> LightState:
         current = self._entry(name).state

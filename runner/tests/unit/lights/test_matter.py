@@ -13,8 +13,9 @@ from atlas.lights.domain.matter import (
     capabilities_from,
     decode,
     plan,
+    satisfies,
 )
-from atlas.lights.domain.model import Light, LightCommand, UnsupportedFeature
+from atlas.lights.domain.model import Light, LightCommand, LightState, UnsupportedFeature
 
 LIGHT = Light(name="ceiling-1", node_id=7, endpoint_id=1)
 NOW = datetime(2026, 9, 12, 20, 0, tzinfo=UTC)
@@ -118,3 +119,62 @@ def test_plan_refuses_a_feature_the_bulb_lacks() -> None:
         plan(LIGHT, caps, LightCommand(brightness=50))
     with pytest.raises(UnsupportedFeature, match="color"):
         plan(LIGHT, caps, LightCommand(hue=1, saturation=1))
+
+
+# --- satisfies() (spec 4.2 fix round 1): confirmation means the reported
+# state matches the request, not merely that some attribute changed. ------
+
+
+def test_satisfies_ignores_fields_the_command_did_not_set() -> None:
+    state = LightState(on=True, brightness=None, color_temp_k=None)
+    assert satisfies(state, LightCommand(on=True)) is True
+
+
+def test_satisfies_on_is_exact() -> None:
+    assert satisfies(LightState(on=True), LightCommand(on=True)) is True
+    assert satisfies(LightState(on=False), LightCommand(on=True)) is False
+    assert satisfies(LightState(on=None), LightCommand(on=True)) is False
+
+
+def test_satisfies_on_false_checks_only_power() -> None:
+    # brightness=0 forces on=False on the command; a wildly different
+    # brightness in the reported state must not matter.
+    command = LightCommand(brightness=0)
+    assert command.on is False
+    assert satisfies(LightState(on=False, brightness=87), command) is True
+    assert satisfies(LightState(on=True, brightness=0), command) is False
+
+
+def test_satisfies_brightness_tolerance_is_one() -> None:
+    command = LightCommand(brightness=40)
+    assert satisfies(LightState(on=True, brightness=41), command) is True
+    assert satisfies(LightState(on=True, brightness=39), command) is True
+    assert satisfies(LightState(on=True, brightness=42), command) is False
+    assert satisfies(LightState(on=True, brightness=None), command) is False
+
+
+def test_satisfies_color_temp_tolerance_is_the_larger_of_2pct_or_60k() -> None:
+    # 2% of 2700 is 54, below the 60K floor.
+    warm = LightCommand(color_temp_k=2700)
+    assert satisfies(LightState(color_temp_k=2760), warm) is True
+    assert satisfies(LightState(color_temp_k=2761), warm) is False
+    # 2% of 6000 is 120, above the floor.
+    cool = LightCommand(color_temp_k=6000)
+    assert satisfies(LightState(color_temp_k=6120), cool) is True
+    assert satisfies(LightState(color_temp_k=6121), cool) is False
+    assert satisfies(LightState(color_temp_k=None), warm) is False
+
+
+def test_satisfies_hue_tolerance_is_three_degrees_with_wraparound() -> None:
+    command = LightCommand(hue=0, saturation=50)
+    assert satisfies(LightState(hue=0, saturation=50), command) is True
+    assert satisfies(LightState(hue=357, saturation=50), command) is True, "wraps below 0"
+    assert satisfies(LightState(hue=356, saturation=50), command) is False
+    assert satisfies(LightState(hue=None, saturation=50), command) is False
+
+
+def test_satisfies_saturation_tolerance_is_two() -> None:
+    command = LightCommand(hue=10, saturation=50)
+    assert satisfies(LightState(hue=10, saturation=52), command) is True
+    assert satisfies(LightState(hue=10, saturation=53), command) is False
+    assert satisfies(LightState(hue=10, saturation=None), command) is False
