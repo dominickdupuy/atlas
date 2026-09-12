@@ -256,12 +256,26 @@ LightsService
 the weather and calendar reports use, so a reader can see staleness instead of
 inferring it.
 
-State is a cache the service owns. After `start_listening`, the controller pushes
-every attribute change; the cache updates from those events, and a read never
-round-trips to a bulb. `apply` sends the planned commands, then waits up to one
-second for the matching attribute events before returning the cache. If nothing
-arrives it returns the last-known state with `error` set; the bulb may still have
-obeyed. This keeps a POST under a second even when a bulb is slow.
+State is a cache the service owns, and it holds only what the device confirmed.
+After `start_listening`, the controller pushes every attribute change, from any
+fabric; the cache updates from those events, and a read never round-trips to a
+bulb. `apply` sends the planned commands, then waits up to one second for the
+matching attribute events before returning the cache. It never writes the
+requested state into the cache optimistically: atlas's own writes reach the
+cache through the same event path as a change made from Apple Home. If nothing
+arrives it returns the last-known state with `error` set; the bulb may still
+have obeyed. This keeps a POST under a second even when a bulb is slow.
+
+Two guards against a missed report:
+
+- **Full resubscribe on reconnect.** Every reconnect sends `start_listening`
+  again and replaces the cache wholesale from the node dump it returns, so a
+  change that happened while the socket was down is never invisible.
+- **Periodic reconciliation.** Every five minutes the service issues one
+  `read_attribute` per light with the wildcard path `<endpoint>/*/*`, limited to
+  the clusters in section 4.1, and applies the answer through the same decode
+  path. A difference from the cache is logged at info level, since it means a
+  report was missed, and the cache takes the device's word.
 
 Scenes fan out one `apply` per light concurrently and return when all have
 settled or timed out. A scene with one unreachable bulb still sets the others.
@@ -300,6 +314,7 @@ attribute paths, used by the dev profile and by tests. Records every `send`.
 ```
 matter_ws_url: str = ""                 # ATLAS_MATTER_WS_URL; empty means lights are off
 lights_file: Path = <repo>/lights.yaml  # ATLAS_LIGHTS_FILE
+model_intent: str = ""                  # ATLAS_MODEL_INTENT; empty falls back to ATLAS_MODEL
 ```
 
 The capability is gated on the URL, not on the profile. Dev with the stub
@@ -310,24 +325,32 @@ the board are exercisable with no Pi.
 
 ```yaml
 lights:
-  desk:        { node_id: 1, endpoint_id: 1 }
-  bedside:     { node_id: 2, endpoint_id: 1 }
-  shelf-left:  { node_id: 3, endpoint_id: 1 }
-  shelf-right: { node_id: 4, endpoint_id: 1 }
+  ceiling-1: { node_id: 1, endpoint_id: 1 }
+  ceiling-2: { node_id: 2, endpoint_id: 1 }
+  ceiling-3: { node_id: 3, endpoint_id: 1 }
+  ceiling-4: { node_id: 4, endpoint_id: 1 }
+
+groups:
+  bedroom: [ceiling-1, ceiling-2, ceiling-3, ceiling-4]
 
 scenes:
   evening:
-    desk:    { brightness: 40, color_temp_k: 2700 }
-    bedside: { brightness: 20, color_temp_k: 2200 }
+    bedroom: { brightness: 40, color_temp_k: 2700 }
+  night:
+    ceiling-1: { brightness: 5, color_temp_k: 2200 }
+    ceiling-2: { on: false }
+    ceiling-3: { on: false }
+    ceiling-4: { on: false }
   off:
-    desk: { on: false }
-    bedside: { on: false }
-    shelf-left: { on: false }
-    shelf-right: { on: false }
+    bedroom: { on: false }
 ```
 
-Node IDs are assigned at commissioning, so the file is filled in during section 6
-and committed afterwards. They are not secrets. Features and colour ranges are
+All four bulbs are ceiling lights in the bedroom, so they are `ceiling-1` to
+`ceiling-4` in the order they are commissioned, and `bedroom` is a group naming
+all of them. A scene or a voice target may name a light or a group; a group
+expands to its members before anything is planned. `all` is the implicit group
+of every light. Node IDs are assigned at commissioning, so the file is filled in
+during section 6 and committed afterwards. They are not secrets. Features and colour ranges are
 read from the bulb, not written here.
 
 ---
@@ -393,12 +416,12 @@ code.
 ### 7.1 Endpoint (D29)
 
 ```
-POST /api/voice     {"text": "turn the desk lamp to forty percent"}
-                    200 {"speech": "Desk at forty percent.",
-                         "intent": {"intent": "set_light", "targets": ["desk"],
+POST /api/voice     {"text": "bedroom lights to forty percent"}
+                    200 {"speech": "Bedroom at forty percent.",
+                         "intent": {"intent": "set_light", "targets": ["bedroom"],
                                     "state": {"brightness_pct": 40}},
                          "tier": 1,
-                         "result": {"applied": ["desk"], "failed": []}}
+                         "result": {"applied": ["ceiling-1", "ceiling-2", "ceiling-3", "ceiling-4"], "failed": []}}
 ```
 
 `speech` is always present, short, and spoken verbatim by the Shortcut. `intent`
@@ -434,15 +457,23 @@ voice/application/handle.py   VoiceService.handle(text) -> VoiceResponse
                               Intent to the lights service through the connectors
                               gateway (D25); compose speech; log the utterance.
 voice/infrastructure/         UtteranceLog: SQLite table voice_utterances
-                              (id, heard_at, text, tier, intent_json, outcome).
+                              (id, heard_at, text, tier, model, intent_json,
+                              outcome). `model` is the tier-2 model identifier,
+                              or NULL for tier 0 and 1. Rows are never deleted.
 ```
 
 Rules that follow from the decisions:
 
 - **Partial parse.** Tier 1 reports `partial` when it recognised a target or a
-  state word but not a complete intent (for example "desk" alone, or "dimmer").
+  state word but not a complete intent (for example "ceiling two" alone, or "dimmer").
   Partial goes to tier 2 with the partial fields as a hint. A complete tier-1
   parse never goes to tier 2.
+- **Tier 2 model.** `ATLAS_MODEL_INTENT`, pinned to an exact model identifier,
+  defaulting to `ATLAS_MODEL` when unset. The two are separable because intent
+  parsing is latency-bound, schema-constrained classification, while jobs are
+  quality-bound agentic work. Parse failures are safe (validation rejects,
+  nothing actuates), so the intent tier optimises for round-trip time. The
+  identifier used is recorded on the utterance row.
 - **Tier 2 is gated three ways.** `ANTHROPIC_API_KEY` present, the budget
   context's daily ceiling not reached (the same pre-flight jobs use, recorded to
   the same ledger under a `voice` pseudo-job), and the WAN reachable. Any gate
@@ -458,13 +489,15 @@ Rules that follow from the decisions:
   guessing.
 - **Targets.** A light name, "all", or a room alias if `lights.yaml` defines
   one. No target with a state word means "all".
-- **Speech composition (D29).** One clause: "Desk at forty percent, warm.",
+- **Speech composition (D29).** One clause: "Bedroom at forty percent, warm.",
   "Evening scene.", "All off.", "Didn't catch that." Never a list of bulbs. A
-  partial failure says what failed: "Evening scene, bedside didn't respond."
+  partial failure says what failed: "Evening scene, ceiling three didn't respond."
 - **Utterance log.** Every call writes one row. `atlas voice log --tier 2`
   prints recent tier-2 rows so promotion into tier-1 rules is a review task, not
   archaeology. The log holds speech transcripts and stays on the Pi's SQLite
-  volume; it is not published to MQTT.
+  volume; it is not published to MQTT. Nothing purges it: with the model
+  identifier on every tier-2 row, the log is the regression fixture for future
+  model changes, and a fixture is not something to expire.
 
 ### 7.3 iOS Shortcut (D24)
 
@@ -568,8 +601,13 @@ plan's job.
   flag; writes return the last-known state with `error`.
 - Schema mismatch on `server_info`: refuse, log once at error level, back off.
   Never partially operate against an unknown schema.
-- Every accepted write publishes `atlas/lights/<name>/changed` with the resulting
-  state, so the board and any future job can react without polling (D6).
+- `atlas/lights/<name>/changed` is published for every attribute change the
+  controller reports, regardless of originating fabric. Apple Home is a peer
+  admin under the multi-admin decision, so its writes are first-class, not
+  noise. The payload is device state, not provenance: there is no source
+  field. Atlas's own writes appear on the topic through the same path, after
+  the device confirms them, so the board and any future job can react without
+  polling (D6).
 - Commissioning failures surface the controller's `error_code` name and
   `details` verbatim in the CLI. Code 1 is "commission failed", the common case
   when the Apple Home window has expired.
@@ -627,17 +665,17 @@ plan's job.
 
 ---
 
-## 14. Open questions for the reviewer
+## 14. Reviewer decisions, 2026-09-12
 
-1. Light names. The four placeholders in section 4.4 are guesses; the real names
-   are chosen at commissioning.
-2. Colour words: the fixed table proposed is red, orange, amber, yellow, green,
-   teal, blue, purple, pink, white, plus the temperature words warm, neutral,
-   cool. Add or remove any.
-4. Tier-2 model: `ATLAS_MODEL` as configured for jobs, or a cheaper one for
-   classification? Proposed: the same setting, one place to change.
-5. Utterance retention: keep the log forever, or purge after 90 days? Proposed:
-   90 days, since its purpose is rule promotion, not history.
-3. Whether `atlas/lights/<name>/changed` should also be emitted for changes made
-   from Apple Home (the controller reports them too). Proposed: yes, since the
-   board should reflect the room, not just atlas's own writes.
+Resolved by the owner after review. Recorded here so the plan does not reopen
+them.
+
+1. **Light names.** `ceiling-1` to `ceiling-4`, all bedroom ceiling lights, with
+   a `bedroom` group. Section 4.4.
+2. **Colour words.** The proposed table stands: red, orange, amber, yellow,
+   green, teal, blue, purple, pink, white; warm, neutral, cool.
+3. **`changed` events.** Emitted for every attribute change the controller
+   reports, from any fabric, with no source field. Section 11.
+4. **Tier-2 model.** `ATLAS_MODEL_INTENT`, pinned, defaulting to `ATLAS_MODEL`;
+   recorded per utterance. Section 7.2.
+5. **Utterance retention.** Never deleted. Section 7.2.
