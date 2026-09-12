@@ -4,6 +4,8 @@ Three ways in, one token: an Authorization header (API callers, ntfy action
 buttons), the atlas_token cookie (browsers), or a one-time ?token= query
 which sets the cookie and redirects — the kiosk's entry path, since a plain
 page navigation cannot carry a header. /healthz and /static are exempt.
+Behind Tailscale serve (D23) the cookie is marked Secure; on plain loopback,
+where the kiosk lives, it is not, or the browser would drop it.
 """
 
 from __future__ import annotations
@@ -46,7 +48,11 @@ class BearerAuthMiddleware:
             remaining = {key: values for key, values in query.items() if key != "token"}
             target = path + (f"?{urlencode(remaining, doseq=True)}" if remaining else "")
             response = RedirectResponse(target, status_code=303)
-            response.set_cookie(COOKIE_NAME, supplied, httponly=True, samesite="lax")
+            secure = (
+                scope.get("scheme") == "https"
+                or headers.get("x-forwarded-proto", "").lower() == "https"
+            )
+            response.set_cookie(COOKIE_NAME, supplied, httponly=True, samesite="lax", secure=secure)
             await response(scope, receive, send)
             return
 

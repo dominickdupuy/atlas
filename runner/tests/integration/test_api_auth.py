@@ -45,3 +45,14 @@ async def test_query_token_sets_cookie_and_redirects(client: AsyncClient) -> Non
 
 async def test_wrong_query_token_is_401(client: AsyncClient) -> None:
     assert (await client.get("/?token=wrong")).status_code == 401
+
+
+async def test_cookie_is_secure_behind_tls(client: AsyncClient) -> None:
+    response = await client.get(f"/?token={API_TOKEN}", headers={"X-Forwarded-Proto": "https"})
+    assert response.status_code == 303
+    assert "secure" in response.headers.get("set-cookie", "").lower()
+
+
+async def test_cookie_is_not_secure_on_plain_loopback(client: AsyncClient) -> None:
+    response = await client.get(f"/?token={API_TOKEN}")
+    assert "secure" not in response.headers.get("set-cookie", "").lower()
