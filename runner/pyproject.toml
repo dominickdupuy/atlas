@@ -23,6 +23,9 @@ dependencies = [
     "sse-starlette>=2.1",
     "icalendar>=7.3.0",
     "recurring-ical-events>=3.8.2",
+    # Matter controller WebSocket (lights context). Already in the lock as a
+    # transitive of uvicorn[standard]; explicit because we import it.
+    "websockets>=17.0.1",
 ]
 
 [project.scripts]

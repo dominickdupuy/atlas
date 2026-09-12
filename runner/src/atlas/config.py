@@ -83,6 +83,12 @@ class Settings(BaseSettings):
     # the environment or /etc/atlas/atlas.env, never in config.toml or the repo.
     calendar_ics_url: str = ""
 
+    # Matter controller (lights context, D20/D21). Empty means the lights
+    # capability is off. "stub" wires the in-process stub controller so the
+    # routes and the board are exercisable with no Pi and no bulbs.
+    matter_ws_url: str = ""
+    lights_file: Path = Path("../lights.yaml")
+
     daily_ceiling_usd: str = "5.00"
     model: str = "claude-sonnet-5"
     price_input_per_mtok: str | None = None

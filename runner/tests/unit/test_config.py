@@ -86,3 +86,18 @@ def test_typed_coercion_survives_the_file(tmp_path: Path, monkeypatch: pytest.Mo
 
     assert settings.db_path == Path("/var/lib/atlas/state.db")
     assert settings.weather_lat == pytest.approx(41.5)
+
+
+def test_lights_settings_default_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("ATLAS_MATTER_WS_URL", raising=False)
+    settings = Settings(_env_file=None)
+    assert settings.matter_ws_url == ""
+    assert settings.lights_file == Path("../lights.yaml")
+
+
+def test_lights_settings_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ATLAS_MATTER_WS_URL", "ws://127.0.0.1:5580/ws")
+    monkeypatch.setenv("ATLAS_LIGHTS_FILE", "/opt/atlas/lights.yaml")
+    settings = Settings(_env_file=None)
+    assert settings.matter_ws_url == "ws://127.0.0.1:5580/ws"
+    assert settings.lights_file == Path("/opt/atlas/lights.yaml")
