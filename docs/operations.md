@@ -149,3 +149,46 @@ curl -s -X POST -H "Authorization: Bearer $T" https://atlas.tail5c9e82.ts.net/ap
 
 Every confirmed change, from atlas or from Apple Home, publishes
 `atlas/lights/<name>/changed`.
+
+## Voice through the phone
+
+`POST /api/voice {"text": "..."}` returns `{"speech", "intent", "tier", "result"}`
+(D29). Tier 1 is offline and deterministic; tier 2 asks Claude to classify and
+validates the answer before anything moves. Every utterance is logged and
+never purged. From `/opt/atlas/runner` on atlas:
+
+```sh
+cd /opt/atlas/runner && uv run --frozen atlas voice log --tier 2
+```
+
+This lists what tier 1 could not handle, which is the promotion queue for
+new tier-1 rules (D26). The command reads the SQLite path from settings, so
+it follows `ATLAS_DB_PATH` if that is set in `/etc/atlas/atlas.env`, and
+otherwise falls back to the default under `/opt/atlas/runner/data/`.
+
+### The `Atlas` Shortcut (D24)
+
+One shortcut. Invocation: "Hey Siri, Atlas", then speak.
+
+1. *Text*, value set to **Ask Each Time**.
+2. *Get Contents of URL*: URL `https://atlas.tail5c9e82.ts.net/api/voice`,
+   Method POST, Headers `Authorization: Bearer <token>` and
+   `Content-Type: application/json`, Request Body JSON with key `text` = the
+   Text variable.
+3. *Get Dictionary Value*: key `speech` from Contents of URL.
+4. *Speak Text* with that value.
+
+The token is `ATLAS_API_TOKEN` from `/etc/atlas/atlas.env` on atlas; read it
+with `sudo cat`, type it into the Shortcut once. The phone needs the Tailscale
+app signed in and connected. Siri's own "turn off the lights" through Apple
+Home stays as the fallback that works when atlas is down.
+
+### What tier 1 understands
+
+Targets: `ceiling 1` to `ceiling 4`, `bedroom`, `all`/`everything`/`the lights`.
+Hyphenated light names are spoken with a space: "ceiling 1", not "ceiling-1".
+Power: on, off, toggle. Brightness: "to 40 percent". Colour: red, orange,
+amber, yellow, green, teal, blue, purple, pink, white; warm, neutral, cool.
+Scenes by name, with "mode"/"lights"/"scene" ignored: "evening mode". A weak
+fuzzy match on a scene name is not acted on directly; it falls through to
+tier 2 for confirmation. Queries: "is ceiling one on", "are the lights on".

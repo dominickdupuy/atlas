@@ -45,6 +45,7 @@ and optional voice/MCP services are separate processes defined in Compose.
 | Presentation | `runner/src/atlas/presentation/` | FastAPI/auth, status assembly, Jinja/htmx panels, passive board JavaScript/CSS |
 | Hosted repos | `scripts/repos.py`, `infra/repos.toml`, `docs/repos.md` | Ordinary external projects, cron, queued runs, systemd services, logs/state |
 | Lights | `runner/src/atlas/lights/application/service.py` | Matter bulbs via matterjs-server; registry from lights.yaml; /api/lights; commissioning CLI |
+| Voice | `runner/src/atlas/voice/application/service.py` | /api/voice: tier-1 parser, tier-2 validated classifier, utterance log; lights via the connectors gateway (D25) |
 | Deployment | `scripts/deploy.sh`, `.github/workflows/ci.yml`, `infra/systemd/` | CI promotes green main to release; deploy timer follows release |
 
 The health screen's analysis is not part of this repository. It lives in the
