@@ -67,6 +67,72 @@ keeps listening on loopback. `tailscaled` terminates TLS with the tailnet cert a
 proxies to 127.0.0.1:8100. No Caddy, no certificate files, no new container.
 Bearer auth stays exactly as D16 specifies.
 
+The following six were written by the owner on 2026-09-12 and extend D22.
+
+**D24. One voice door: the "Atlas" shortcut.** Invocation is "Hey Siri, Atlas"
+followed by a dictated utterance. A single iOS Shortcut named `Atlas` captures
+free text via Ask Each Time and POSTs it to `/api/voice`. Named per-command
+shortcuts are NOT created: they fragment the grammar across the phone, where it
+cannot be changed without editing Shortcuts by hand, and they compete with
+Siri's own native handling of the bulbs. The phone parses nothing. It is a
+microphone and a speaker. All interpretation lives in the runner, where it is
+versioned, testable, and deployable.
+
+Consequence to accept: for the bulbs already in Apple Home, Siri's native "turn
+off the lights" remains faster and keeps working when Atlas is down. That path
+is deliberately retained as the failure fallback. Atlas owns everything else.
+
+**D25. No MCP server for lights.** The lights application service is in-process
+per D20; the voice tier calls it directly through the connectors gateway. MCP
+would serialize a call to ourselves. MCP is reconsidered only if an external LLM
+client (e.g. Claude Desktop) needs lights as a tool. Not now.
+
+**D26. Two-tier intent parsing, one output contract.** Both tiers emit the same
+validated `Intent` object; the application service cannot tell which tier
+produced it.
+
+```
+intent:  set_light | apply_scene | query | unknown
+targets: list[str]        # resolved names, or ["all"]
+state:   power, brightness_pct, color
+scene:   str              # apply_scene only
+```
+
+Tier 1 is deterministic: keyword table plus regex over power words, percentages,
+colour words, scene names, target names. Sub-millisecond, offline, no API cost.
+It must handle the common utterances without network access, so lights still
+respond when WAN is down.
+
+Tier 2 fires only when tier 1 returns `unknown` or a partial parse. The utterance
+goes to Claude with the schema and a JSON-only instruction; the response is
+validated against the Pydantic model before anything touches a bulb. Validation
+failure returns "didn't catch that" and changes nothing. Never act on an
+unvalidated parse.
+
+Every utterance is logged with the tier that handled it and the resulting
+Intent. Frequent tier-2 hits get promoted into tier-1 rules. Tier 2 usage
+trending toward zero is the success metric.
+
+**D27. Scenes are config, not parsing.** Scenes live in a YAML file as a name to
+list-of-target-states mapping. The parser's only job is fuzzy-matching a spoken
+phrase to a scene key, so "morning", "morning mode", and "morning lights" all
+resolve to `morning`. Adding a scene is a config change and never touches parser
+code. The same file backs `GET /api/lights/scenes`.
+
+**D28. Colour maths is domain logic.** The parser emits colour names only. The
+domain layer owns the conversion: named colour to hue/saturation on the 0-254
+scale for MoveToHueAndSaturation; colour *temperature* words ("warm", "cool") to
+mireds for MoveToColorTemperature, which is a different cluster command despite
+sounding like the same request; brightness percent to level as
+round(pct * 254 / 100). Named colours come from a fixed table in the domain,
+never from the LLM, so "red" is the same red every time. Note level 0 is not
+equivalent to off on most firmware; power is always set explicitly.
+
+**D29. Voice response contract.** `/api/voice` returns both a `speech` string and
+the structured result (per the D22 note), so a future non-speaking client is not
+parsing prose. Responses are short enough to speak: confirm what changed, do not
+enumerate four bulbs.
+
 ---
 
 ## 3. Matter controller deployment
@@ -131,6 +197,13 @@ Rules the domain owns:
 - `LightCommand` validation: `color_temp_k` and `hue/saturation` are mutually
   exclusive. `brightness == 0` means off. `brightness > 0` implies on unless `on`
   is explicitly false. Ranges are checked here, once.
+- Power is always sent explicitly (D28). Level 0 is not off on most firmware,
+  so `plan` never relies on a level command to switch a bulb off, and never
+  relies on `moveToLevelWithOnOff` alone to switch it on.
+- Named colours are a fixed table in this layer (D28): the parser hands over
+  "red", the domain hands over hue and saturation. Colour-temperature words map
+  to kelvin here too: warm 2700 K, neutral 4000 K, cool 5500 K, clamped to the
+  bulb's range.
 - `plan(light, command) -> list[ClusterCommand]`. Translates a command into
   Matter cluster commands in the order the bulb needs them. Colour before level
   before on/off, so a bulb never flashes its old colour. Rejects a feature the
@@ -314,44 +387,104 @@ Four bulbs, four rounds, then commit `lights.yaml`. The printed codes in
 
 ## 7. Voice through the phone
 
-### 7.1 Endpoint
+Governed by D22 and D24 to D29. This section says how those decisions land in
+code.
+
+### 7.1 Endpoint (D29)
 
 ```
 POST /api/voice     {"text": "turn the desk lamp to forty percent"}
-                    200 {"speech": "Desk at forty percent.", "intent": {...} | null}
+                    200 {"speech": "Desk at forty percent.",
+                         "intent": {"intent": "set_light", "targets": ["desk"],
+                                    "state": {"brightness_pct": 40}},
+                         "tier": 1,
+                         "result": {"applied": ["desk"], "failed": []}}
 ```
 
-Built in two steps so the Shortcut can be finished on day one:
+`speech` is always present, short, and spoken verbatim by the Shortcut. `intent`
+is the validated `Intent` from D26, or the `unknown` intent. `tier` is 1, 2, or
+0 for the echo step. `result` is what the lights service did. A future
+non-speaking client reads the structured fields and ignores `speech`.
 
-1. **Echo.** Returns `{"speech": "Heard: <text>"}`. The phone side is built and
-   tested against this.
-2. **Light intents.** A small deterministic grammar in a `voice` context
-   (`voice/domain/intent.py`, `voice/application/parse.py`,
-   `voice/application/handle.py`): on, off, toggle, brightness by percent, warm
-   and cool, a fixed colour-word table, and scene names. Light names and scene
-   names come from the registry, so the grammar cannot drift from
-   `lights.yaml`. Anything it cannot parse returns a polite refusal with the
-   heard text, and `intent: null`. No model call. A tier 2 or tier 3 fallback
-   for open-ended requests is phase 7 work and is explicitly out of scope here.
+Built in three steps so the Shortcut can be finished on day one:
 
-`speech` is plain text, short, and always present, because the Shortcut speaks it
-verbatim.
+1. **Echo.** Returns `{"speech": "Heard: <text>", "tier": 0}` and no intent. The
+   phone side is built and tested against this.
+2. **Tier 1.** Deterministic parser, offline, no network.
+3. **Tier 2.** Claude fallback with validation, only after tier 1 is in use.
 
-### 7.2 iOS Shortcut
+### 7.2 The `voice` bounded context
 
-Two shortcuts, both calling the same endpoint. The owner builds these (section 10).
+```
+voice/domain/intent.py        Intent, LightStateWords (power, brightness_pct, color name)
+                              Frozen pydantic models; the D26 contract. Colour is a
+                              *name* here (D28); the lights domain turns it into numbers.
+voice/application/tier1.py    parse(text, vocabulary) -> Intent
+                              Pure. Vocabulary = light names, scene names, colour
+                              names, power words, injected from the lights registry
+                              and the colour table, so the grammar cannot drift from
+                              lights.yaml (D27).
+voice/application/tier2.py    LlmIntentParser: builds the JSON-only prompt from the
+                              same vocabulary and the Intent JSON schema, calls the
+                              existing LlmProvider port, validates the reply with
+                              Intent.model_validate_json. Any validation error, any
+                              non-JSON reply, any name not in the vocabulary -> unknown.
+voice/application/handle.py   VoiceService.handle(text) -> VoiceResponse
+                              tier 1; if unknown or partial, tier 2; dispatch the
+                              Intent to the lights service through the connectors
+                              gateway (D25); compose speech; log the utterance.
+voice/infrastructure/         UtteranceLog: SQLite table voice_utterances
+                              (id, heard_at, text, tier, intent_json, outcome).
+```
 
-- **"Atlas"**: Dictate Text, then *Get Contents of URL* `POST
-  https://atlas.tail5c9e82.ts.net/api/voice`, headers
-  `Authorization: Bearer <ATLAS_API_TOKEN>` and `Content-Type: application/json`,
-  body `{"text": <dictated>}`; *Get Dictionary Value* `speech`; *Speak Text*.
-- **Fixed phrases** such as "Lights off": the same request with a constant body.
-  One utterance, no dictation turn.
+Rules that follow from the decisions:
+
+- **Partial parse.** Tier 1 reports `partial` when it recognised a target or a
+  state word but not a complete intent (for example "desk" alone, or "dimmer").
+  Partial goes to tier 2 with the partial fields as a hint. A complete tier-1
+  parse never goes to tier 2.
+- **Tier 2 is gated three ways.** `ANTHROPIC_API_KEY` present, the budget
+  context's daily ceiling not reached (the same pre-flight jobs use, recorded to
+  the same ledger under a `voice` pseudo-job), and the WAN reachable. Any gate
+  closed returns "didn't catch that" from tier 1's `unknown`. Lights keep working
+  offline because tier 1 never needs the network (D26).
+- **Prompt hygiene.** The tier-2 prompt contains the vocabulary and the schema,
+  never the utterance log or any state. The model is asked for one JSON object
+  and nothing else. The utterance is user speech, so it is placed as data, not
+  as instructions, and the reply is treated as untrusted until validated.
+- **Scene matching (D27).** Normalise the phrase (lowercase, strip "mode",
+  "lights", "scene", articles), then exact match on scene key, then a bounded
+  edit-distance match. Ambiguity between two scenes returns `unknown` rather than
+  guessing.
+- **Targets.** A light name, "all", or a room alias if `lights.yaml` defines
+  one. No target with a state word means "all".
+- **Speech composition (D29).** One clause: "Desk at forty percent, warm.",
+  "Evening scene.", "All off.", "Didn't catch that." Never a list of bulbs. A
+  partial failure says what failed: "Evening scene, bedside didn't respond."
+- **Utterance log.** Every call writes one row. `atlas voice log --tier 2`
+  prints recent tier-2 rows so promotion into tier-1 rules is a review task, not
+  archaeology. The log holds speech transcripts and stays on the Pi's SQLite
+  volume; it is not published to MQTT.
+
+### 7.3 iOS Shortcut (D24)
+
+One shortcut, named `Atlas`, built by the owner (section 10):
+
+1. *Text*, set to **Ask Each Time**. Siri prompts, you dictate.
+2. *Get Contents of URL*: `POST https://atlas.tail5c9e82.ts.net/api/voice`,
+   headers `Authorization: Bearer <ATLAS_API_TOKEN>` and
+   `Content-Type: application/json`, request body JSON `{"text": <Text>}`.
+3. *Get Dictionary Value* `speech` from the response.
+4. *Speak Text*.
+
+Invocation is "Hey Siri, Atlas", then the utterance. No per-command shortcuts.
+Siri's own "turn off the lights" against Apple Home stays as the fallback that
+works when atlas is down.
 
 Token handling: the token is read off the Pi with `cat /etc/atlas/atlas.env`
 and typed into the Shortcut once. It never passes through chat.
 
-### 7.3 Phone prerequisites
+### 7.4 Phone prerequisites
 
 - Tailscale app on the iPhone 17, signed into the same tailnet, connected when
   the Shortcut runs. The tailnet already has MagicDNS and HTTPS certificates on,
@@ -419,7 +552,7 @@ plan's job.
 | 1 | Run the `tailscale serve` command in section 9 | Before the first phone test |
 | 2 | Put `ATLAS_MATTER_WS_URL=ws://127.0.0.1:5580/ws` and the `ATLAS_PUBLIC_URL` line in `/etc/atlas/atlas.env` (root-owned; the assistant cannot write it) | Before the runner restart that enables lights |
 | 3 | Open pairing mode in Apple Home for each bulb and read out the code, four times | During commissioning |
-| 4 | Build the two Shortcuts (section 7.2) against the echo endpoint | Any time after task 1 |
+| 4 | Build the `Atlas` Shortcut (section 7.3) against the echo endpoint | Any time after task 1 |
 | 5 | Install and sign in to Tailscale on the iPhone 17 | Before task 4 |
 | 6 | Decide on a speaker (section 8) | Whenever |
 | 7 | Record D20 to D23 in `docs/architecture.md` and update the §11 open questions (devices and protocols are now known; voice STT is resolved to the phone) | After review |
@@ -457,7 +590,11 @@ plan's job.
 - **HTTP**: integration tests through the ASGI transport with the stub injected
   by field assignment, as `test_api_approvals.py` does; every status code in
   section 5, plus auth rejection.
-- **Voice**: parse table tests, one per phrase family, and the echo contract.
+- **Voice**: tier-1 parse table, one row per phrase family including partials
+  and ambiguous scenes; tier 2 with a fake `LlmProvider` returning valid JSON,
+  invalid JSON, an out-of-vocabulary name, and prose, asserting that only the
+  first reaches the lights service; the three tier-2 gates; speech composition;
+  the utterance log row; and the echo contract.
 - **Registry**: a bad `lights.yaml` fails startup with a message naming the key.
 - **On atlas**: the plan's last task commissions one bulb, runs each route with
   `curl` over the HTTPS name, and records the real command names and attribute
@@ -472,9 +609,14 @@ plan's job.
   it a small later addition.
 - **Thread.** No Thread devices exist. The sysctl and border-router notes in the
   controller's OS requirements apply only then.
-- **Exposing lights as a tool to tier 2/3 jobs.** The service is shaped for it;
-  wiring it into the `ToolGateway` allowlist is a job-schema change for another
-  spec.
+- **Exposing lights to tier 2/3 *jobs*.** Voice reaches lights through the
+  connectors gateway (D25), so the in-process `lights.*` tool namespace exists
+  after this work. Letting a scheduled job allowlist it is a job-schema change
+  for another spec.
+- **An MCP server for lights.** D25.
+- **Open-ended conversation.** Tier 2 classifies one utterance into one
+  `Intent`; it does not chat, plan, or call tools. Anything beyond lights
+  returns `unknown`.
 - **Moving FreeReps behind the atlas Tailscale node.** Requested the same day,
   separate repository (`meltforce/FreeReps`), and not a config change: FreeReps
   derives user identity from its own tsnet node's WhoIs lookup
@@ -489,8 +631,13 @@ plan's job.
 
 1. Light names. The four placeholders in section 4.4 are guesses; the real names
    are chosen at commissioning.
-2. Colour words for the voice grammar: a fixed table of a dozen (red, orange,
-   amber, yellow, green, teal, blue, purple, pink, white, warm, cool) or fewer?
+2. Colour words: the fixed table proposed is red, orange, amber, yellow, green,
+   teal, blue, purple, pink, white, plus the temperature words warm, neutral,
+   cool. Add or remove any.
+4. Tier-2 model: `ATLAS_MODEL` as configured for jobs, or a cheaper one for
+   classification? Proposed: the same setting, one place to change.
+5. Utterance retention: keep the log forever, or purge after 90 days? Proposed:
+   90 days, since its purpose is rule promotion, not history.
 3. Whether `atlas/lights/<name>/changed` should also be emitted for changes made
    from Apple Home (the controller reports them too). Proposed: yes, since the
    board should reflect the room, not just atlas's own writes.
