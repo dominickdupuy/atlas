@@ -24,7 +24,7 @@ from atlas.jobs.application.ports import BudgetDecision
 from atlas.jobs.domain.definition import JobDefinition
 from atlas.shared.clock import Clock
 from atlas.shared.events import InProcessEventBus
-from atlas.shared.ids import RunId, new_entry_id
+from atlas.shared.ids import JobId, RunId, new_entry_id
 
 logger = logging.getLogger(__name__)
 
@@ -61,23 +61,34 @@ class BudgetService:
         spent = await self._repo.total_since(self._day_start_utc())
         return evaluate(spent, self._ceiling)
 
-    async def preflight(self, definition: JobDefinition) -> BudgetDecision:
+    async def allows(self) -> BudgetDecision:
         status = await self.current_status()
         if status.level is BudgetLevel.EXHAUSTED:
             return BudgetDecision(allowed=False, reason="daily spend ceiling reached")
         return BudgetDecision(allowed=True)
 
-    async def record(self, definition: JobDefinition, run_id: RunId, usage: TokenUsage) -> None:
+    async def preflight(self, definition: JobDefinition) -> BudgetDecision:
+        return await self.allows()
+
+    async def record_usage(
+        self, *, model: str, usage: TokenUsage, job_id: JobId | None, run_id: RunId | None
+    ) -> None:
         entry = LedgerEntry(
             entry_id=new_entry_id(),
             run_id=run_id,
-            job_id=definition.id,
-            model=self._model,
+            job_id=job_id,
+            model=model,
             usage=usage,
-            cost_usd_micros=self._pricing.cost(self._model, usage),
+            cost_usd_micros=self._pricing.cost(model, usage),
             recorded_at=self._clock.now(),
         )
         await self._repo.add(entry)
+        await self._after_record()
+
+    async def record(self, definition: JobDefinition, run_id: RunId, usage: TokenUsage) -> None:
+        await self.record_usage(model=self._model, usage=usage, job_id=definition.id, run_id=run_id)
+
+    async def _after_record(self) -> None:
         status = await self.current_status()
         now = self._clock.now()
 

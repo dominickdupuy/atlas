@@ -91,6 +91,16 @@ class Settings(BaseSettings):
 
     daily_ceiling_usd: str = "5.00"
     model: str = "claude-sonnet-5"
+
+    # Tier-2 intent classification (D26). Latency-bound, schema-constrained,
+    # safe to fail: a different axis from the quality-bound job model, so it
+    # is a separate pin. Empty falls back to `model`.
+    model_intent: str = ""
+
+    @property
+    def intent_model(self) -> str:
+        return self.model_intent or self.model
+
     price_input_per_mtok: str | None = None
     price_output_per_mtok: str | None = None
 

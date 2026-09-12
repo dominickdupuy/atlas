@@ -101,3 +101,10 @@ def test_lights_settings_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = Settings(_env_file=None)
     assert settings.matter_ws_url == "ws://127.0.0.1:5580/ws"
     assert settings.lights_file == Path("/opt/atlas/lights.yaml")
+
+
+def test_intent_model_defaults_to_the_job_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("ATLAS_MODEL_INTENT", raising=False)
+    assert Settings(_env_file=None, model="claude-sonnet-5").intent_model == "claude-sonnet-5"
+    monkeypatch.setenv("ATLAS_MODEL_INTENT", "claude-haiku-4-5-20251001")
+    assert Settings(_env_file=None).intent_model == "claude-haiku-4-5-20251001"
