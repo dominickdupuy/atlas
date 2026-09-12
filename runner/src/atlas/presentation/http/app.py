@@ -23,6 +23,7 @@ from atlas.presentation.http.routers import (
     jobs,
     lights,
     status,
+    voice,
 )
 from atlas.presentation.http.status import StatusAssembler
 
@@ -68,6 +69,7 @@ def create_app(application: Application) -> FastAPI:
     app.include_router(events.router)
     app.include_router(status.router)
     app.include_router(lights.router)
+    app.include_router(voice.router)
     app.include_router(dashboard.router)
 
     app.add_middleware(BearerAuthMiddleware, token=application.settings.api_token)
