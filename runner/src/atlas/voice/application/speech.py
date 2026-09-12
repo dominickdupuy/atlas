@@ -84,7 +84,12 @@ def _compose_set_light(intent: Intent, result: dict[str, JsonValue] | None) -> s
             clauses.append("toggled")
         elif state.power is not None and state.brightness_pct is None:
             clauses.append(state.power)
-        if state.brightness_pct is not None:
+        if state.brightness_pct == 0:
+            # Level 0 is not equivalent to off on most firmware (D28), but
+            # it is what a listener means by "off": say that, not the
+            # confusing "at 0 percent".
+            clauses.append("off")
+        elif state.brightness_pct is not None:
             clauses.append(f"at {state.brightness_pct} percent")
         if state.color is not None:
             clauses.append(state.color)

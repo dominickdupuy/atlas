@@ -13,8 +13,22 @@ from atlas.connectors.domain.tools import TokenUsage
 
 
 class AnthropicLlmProvider:
-    def __init__(self, api_key: str, model: str) -> None:
-        self._client = AsyncAnthropic(api_key=api_key)
+    def __init__(
+        self,
+        api_key: str,
+        model: str,
+        *,
+        timeout: float | None = None,
+        max_retries: int | None = None,
+    ) -> None:
+        # Only pass timeout/max_retries when the caller set them, so jobs
+        # (which construct this with neither) keep the SDK's own defaults.
+        client = AsyncAnthropic(api_key=api_key)
+        if timeout is not None:
+            client = client.with_options(timeout=timeout)
+        if max_retries is not None:
+            client = client.with_options(max_retries=max_retries)
+        self._client = client
         self._model = model
 
     async def complete(self, request: LlmRequest) -> LlmResponse:

@@ -9,7 +9,7 @@ from atlas.bootstrap.connectors_factory import Connectors
 from atlas.budget.application.service import BudgetService
 from atlas.config import Settings
 from atlas.connectors.application.gateway import ToolGateway
-from atlas.connectors.domain.tools import ToolAllowlist
+from atlas.connectors.domain.tools import TokenUsage, ToolAllowlist
 from atlas.connectors.infrastructure.stubs import StubLlmProvider
 from atlas.lights.application.service import LightsService
 from atlas.lights.application.tools import LightsTools
@@ -42,12 +42,26 @@ def build_voice(
 
     tier2: LlmIntentParser | None
     if settings.profile == "dev":
-        tier2 = LlmIntentParser(StubLlmProvider(responses=('{"intent": "unknown"}',)), model="stub")
+        # Dev must spend nothing: a real TokenUsage would write fake spend
+        # to the budget ledger every time the stub answers.
+        tier2 = LlmIntentParser(
+            StubLlmProvider(responses=('{"intent": "unknown"}',), usage=TokenUsage()),
+            model="stub",
+        )
     elif settings.anthropic_api_key:
         from atlas.connectors.infrastructure.anthropic_llm import AnthropicLlmProvider
 
         tier2 = LlmIntentParser(
-            AnthropicLlmProvider(settings.anthropic_api_key, settings.intent_model),
+            AnthropicLlmProvider(
+                settings.anthropic_api_key,
+                settings.intent_model,
+                # The tier-2 budget is 6s total (LlmIntentParser's own
+                # timeout); failing a transient 429/529 fast and without a
+                # client-side retry keeps a retry loop from blowing that
+                # budget on its own.
+                timeout=5.0,
+                max_retries=0,
+            ),
             model=settings.intent_model,
         )
     else:

@@ -31,6 +31,12 @@ def test_set_light_clauses() -> None:
     )
 
 
+def test_zero_brightness_speaks_off_not_a_percentage() -> None:
+    """Finding 13: 'at 0 percent' is confusing; a listener means 'off'."""
+    ok: dict[str, JsonValue] = {"applied": ["ceiling-1"], "failed": []}
+    assert compose(_set("ceiling-1", brightness_pct=0), ok) == "Ceiling 1 off."
+
+
 def test_partial_and_total_failure_name_the_bulb() -> None:
     assert (
         compose(_set("bedroom", power="off"), {"applied": ["ceiling-1"], "failed": ["ceiling-3"]})
