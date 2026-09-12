@@ -12,7 +12,7 @@ async def test_migrate_applies_and_is_idempotent(tmp_path: Path) -> None:
     await db.connect()
     try:
         first = await db.migrate()
-        assert first == ["0001_initial.sql"]
+        assert first == ["0001_initial.sql", "0002_voice_utterances.sql"]
         second = await db.migrate()
         assert second == []
 
@@ -32,6 +32,13 @@ async def test_schema_has_the_three_tables(tmp_path: Path) -> None:
             "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
         ) as cursor:
             tables = {row["name"] for row in await cursor.fetchall()}
-        assert {"job_runs", "approvals", "budget_ledger", "schema_migrations"} <= tables
+        expected = {
+            "job_runs",
+            "approvals",
+            "budget_ledger",
+            "schema_migrations",
+            "voice_utterances",
+        }
+        assert expected <= tables
     finally:
         await db.close()
