@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import importlib.util
 import subprocess
+import types
 from pathlib import Path
 
 import pytest
@@ -15,7 +16,7 @@ import pytest
 _REPOS = Path(__file__).parents[3] / "scripts" / "repos.py"
 
 
-def _load(monkeypatch: pytest.MonkeyPatch, **env: str | None):
+def _load(monkeypatch: pytest.MonkeyPatch, **env: str | None) -> types.ModuleType:
     for key in ("REPOS_USER", "SUDO_USER", "USER"):
         monkeypatch.delenv(key, raising=False)
     for key, value in env.items():
@@ -88,7 +89,7 @@ def test_first_clone_creates_its_directory_as_root(
     monkeypatch.setattr(module, "sudo", lambda *a: sudo_calls.append(a))
     git_calls: list[list[str]] = []
 
-    def fake_run(cmd, **kwargs):
+    def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
         git_calls.append(cmd)
         return subprocess.CompletedProcess(cmd, 0)
 
@@ -124,11 +125,11 @@ def test_an_existing_checkout_is_pulled_without_touching_root(
 
     monkeypatch.setattr(module, "sudo", lambda *a: pytest.fail("no sudo for a pull"))
     calls: list[list[str]] = []
-    monkeypatch.setattr(
-        module.subprocess,
-        "run",
-        lambda cmd, **kw: (calls.append(cmd), subprocess.CompletedProcess(cmd, 0))[1],
-    )
+    def fake_run_pull(cmd: list[str], **kw: object) -> subprocess.CompletedProcess[bytes]:
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run_pull)
 
     class _Log:
         file = None
