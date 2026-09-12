@@ -9,6 +9,7 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 WEATHER_SERVER = "weather"
+LIGHTS_SERVER = "lights"
 
 
 class ToolCall(BaseModel):

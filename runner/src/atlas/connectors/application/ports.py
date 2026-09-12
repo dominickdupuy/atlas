@@ -3,10 +3,11 @@ nothing outside the connectors context imports an adapter directly."""
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Literal, Protocol
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from atlas.connectors.domain.tools import TokenUsage, ToolCall, ToolResult
 
@@ -107,6 +108,20 @@ class WeatherReport(BaseModel):
 
 class WeatherReportPort(Protocol):
     async def get_report(self, latitude: float, longitude: float) -> WeatherReport: ...
+
+
+class LightsToolPort(Protocol):
+    """The lights context as an in-process tool server (D25). Implemented by
+    atlas.lights.application.tools.LightsTools; this context never imports
+    that module, the composition root passes the instance in."""
+
+    async def set_lights(
+        self, targets: Sequence[str], command: dict[str, JsonValue], *, toggle: bool = False
+    ) -> dict[str, JsonValue]: ...
+
+    async def activate_scene(self, name: str) -> dict[str, JsonValue]: ...
+
+    def state(self) -> dict[str, JsonValue]: ...
 
 
 class CalendarEvent(BaseModel):

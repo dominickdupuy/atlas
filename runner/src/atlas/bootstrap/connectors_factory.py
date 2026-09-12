@@ -13,7 +13,13 @@ from dataclasses import dataclass
 
 from atlas.config import Settings
 from atlas.connectors.application.gateway import ToolGateway
-from atlas.connectors.application.ports import LlmProvider, McpClient, Notifier, WeatherPort
+from atlas.connectors.application.ports import (
+    LightsToolPort,
+    LlmProvider,
+    McpClient,
+    Notifier,
+    WeatherPort,
+)
 from atlas.connectors.application.tier_executors import (
     Tier1Executor,
     Tier2Executor,
@@ -83,7 +89,9 @@ def build_notifier(settings: Settings) -> Notifier:
     return LogNotifier()
 
 
-def gateway_for(definition: JobDefinition, connectors: Connectors) -> ToolGateway:
+def gateway_for(
+    definition: JobDefinition, connectors: Connectors, lights: LightsToolPort | None = None
+) -> ToolGateway:
     """One gateway per run/action: fresh call counter, the job's own
     allowlist (spec §7)."""
     return ToolGateway(
@@ -91,6 +99,7 @@ def gateway_for(definition: JobDefinition, connectors: Connectors) -> ToolGatewa
         clients=connectors.clients,
         weather=connectors.weather,
         max_tool_calls=definition.budget.max_tool_calls,
+        lights=lights,
     )
 
 

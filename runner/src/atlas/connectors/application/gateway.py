@@ -8,8 +8,9 @@ built per run so the call counter is fresh.
 
 from __future__ import annotations
 
-from atlas.connectors.application.ports import McpClient, WeatherPort
+from atlas.connectors.application.ports import LightsToolPort, McpClient, WeatherPort
 from atlas.connectors.domain.tools import (
+    LIGHTS_SERVER,
     WEATHER_SERVER,
     ToolAllowlist,
     ToolCall,
@@ -43,11 +44,13 @@ class ToolGateway:
         clients: dict[str, McpClient],
         weather: WeatherPort,
         max_tool_calls: int,
+        lights: LightsToolPort | None = None,
     ) -> None:
         self._allowlist = allowlist
         self._clients = clients
         self._weather = weather
         self._max_tool_calls = max_tool_calls
+        self._lights = lights
         self._calls = 0
 
     @property
@@ -63,6 +66,8 @@ class ToolGateway:
 
         if call.server == WEATHER_SERVER:
             return await self._call_weather(call)
+        if call.server == LIGHTS_SERVER:
+            return await self._call_lights(call)
         client = self._clients.get(call.server)
         if client is None:
             raise UnknownToolServer(call.server)
@@ -81,3 +86,41 @@ class ToolGateway:
             )
         forecast = await self._weather.get_forecast(float(latitude), float(longitude))
         return ToolResult(tool=call.tool, content=forecast.model_dump())
+
+    _LIGHT_COMMAND_KEYS = ("on", "brightness", "color_temp_k", "hue", "saturation", "transition_ms")
+
+    async def _call_lights(self, call: ToolCall) -> ToolResult:
+        if self._lights is None:
+            return ToolResult(tool=call.tool, content="lights are not configured", is_error=True)
+        try:
+            match call.name:
+                case "set":
+                    raw_targets = call.args.get("targets")
+                    if not isinstance(raw_targets, list) or not all(
+                        isinstance(t, str) for t in raw_targets
+                    ):
+                        return ToolResult(
+                            tool=call.tool,
+                            content="targets: list[str] is required",
+                            is_error=True,
+                        )
+                    targets = [t for t in raw_targets if isinstance(t, str)]
+                    command = {k: v for k, v in call.args.items() if k in self._LIGHT_COMMAND_KEYS}
+                    toggle = bool(call.args.get("toggle", False))
+                    content = await self._lights.set_lights(targets, command, toggle=toggle)
+                case "scene":
+                    name = call.args.get("name")
+                    if not isinstance(name, str):
+                        return ToolResult(tool=call.tool, content="name is required", is_error=True)
+                    content = await self._lights.activate_scene(name)
+                case "state":
+                    content = self._lights.state()
+                case _:
+                    return ToolResult(
+                        tool=call.tool,
+                        content=f"unknown lights tool {call.name!r}",
+                        is_error=True,
+                    )
+        except Exception as exc:  # the gateway never raises for a tool's own failure
+            return ToolResult(tool=call.tool, content=str(exc), is_error=True)
+        return ToolResult(tool=call.tool, content=content)
