@@ -76,6 +76,21 @@ FILLER = frozenset(
         "and",
         "then",
         "dim",
+        "in",
+        "up",
+        "down",
+        "now",
+        "again",
+        "bit",
+        "lamp",
+        "bulb",
+        "hey",
+        "atlas",
+        "ok",
+        "okay",
+        "can",
+        "you",
+        "could",
     ]
 )
 # Words that mean "every light" rather than naming one. Handled separately
@@ -87,14 +102,24 @@ POWER_WORDS: dict[str, Literal["on", "off", "toggle"]] = {
     "off": "off",
     "toggle": "toggle",
 }
-COLOUR_ALIASES = {"warmer": "warm", "cooler": "cool"}
+COLOUR_ALIASES = {"warmer": "warm", "cooler": "cool", "whiter": "white"}
 QUERY_WORDS = frozenset({"is", "are", "what", "whats"})
+# Words that mean the request is deferred to later, not immediate: a leftover
+# time word makes tier 1 report the parse as partial rather than guess a
+# schedule it cannot act on (D26 fix round 2, finding 3).
+TIME_WORDS = frozenset(
+    {"minute", "minutes", "second", "seconds", "hour", "hours", "later", "until", "after", "when"}
+)
 SCENE_LEAD = frozenset({"scene", "activate", "run"})
 SCENE_NOISE = frozenset({"mode", "lights", "scene", "the"})
 # A fuzzy scene match below this ratio is a guess, not a command: it must
 # not actuate on its own (D26 fix round 1). At or above it, and any exact
 # match, are strong enough to stand as a complete parse.
 SCENE_STRONG_CUTOFF = 0.8
+# A fuzzy match on a key shorter than this is always a guess, no matter the
+# ratio: a two-letter near-miss like "of" ~ "off" scores 0.8 but is nowhere
+# near a deliberate scene name (D26 fix round 2, finding 2).
+SCENE_MIN_STRONG_KEY_LEN = 4
 
 
 class ParseResult(BaseModel):
@@ -137,22 +162,24 @@ def normalise(text: str) -> str:
     return " ".join(out)
 
 
-def scene_match(phrase: str, scenes: Sequence[str]) -> tuple[str, float] | None:
+def scene_match(phrase: str, scenes: Sequence[str]) -> tuple[str, float, int] | None:
     """Normalise, drop noise words, exact match, then a single close fuzzy
     match; two close matches is ambiguous and resolves to None. The float is
     the match strength (1.0 for exact) so callers can tell a strong match
-    from a guess."""
+    from a guess; the int is the length of the noise-stripped key, so a
+    two-or-three-letter near-miss (e.g. "of" ~ "off") can be flagged weak
+    regardless of ratio (D26 fix round 2, finding 2)."""
     words = [w for w in normalise(phrase).split() if w not in SCENE_NOISE]
     key = " ".join(words)
     if not key:
         return None
     if key in scenes:
-        return key, 1.0
+        return key, 1.0, len(key)
     close = difflib.get_close_matches(key, list(scenes), n=2, cutoff=0.6)
     if len(close) != 1:
         return None
     scene = close[0]
-    return scene, difflib.SequenceMatcher(None, key, scene).ratio()
+    return scene, difflib.SequenceMatcher(None, key, scene).ratio(), len(key)
 
 
 def match_scene(phrase: str, scenes: Sequence[str]) -> str | None:
@@ -206,11 +233,19 @@ def parse(text: str, vocabulary: Vocabulary) -> ParseResult:
     colour: str | None = None
     all_word_seen = False
     is_query = False
+    time_word_seen = False
+    power_word_count = 0
     leftover: list[str] = []
 
     for word in rest:
-        if word in POWER_WORDS and power is None:
-            power = POWER_WORDS[word]
+        if word in POWER_WORDS:
+            # Track every power word seen, not just the first: a second one
+            # ("ceiling one off and ceiling two on") means two targets got
+            # conflicting instructions, which is a partial parse even though
+            # nothing is left unclassified (D26 fix round 2, finding 3).
+            power_word_count += 1
+            if power is None:
+                power = POWER_WORDS[word]
         elif word.isdigit() and brightness is None and 0 <= int(word) <= 100:
             brightness = int(word)
         elif word == "percent":
@@ -223,6 +258,8 @@ def parse(text: str, vocabulary: Vocabulary) -> ParseResult:
             all_word_seen = True
         elif word in QUERY_WORDS:
             is_query = True
+        elif word in TIME_WORDS:
+            time_word_seen = True
         elif word in SCENE_LEAD or word in FILLER:
             continue
         else:
@@ -238,14 +275,25 @@ def parse(text: str, vocabulary: Vocabulary) -> ParseResult:
     if not targets and (not has_state or words[0] in SCENE_LEAD):
         found = scene_match(" ".join(leftover), vocabulary.scenes)
         if found is not None:
-            scene, ratio = found
-            weak = ratio < SCENE_STRONG_CUTOFF
+            scene, ratio, key_len = found
+            weak = ratio < 1.0 and (
+                ratio < SCENE_STRONG_CUTOFF or key_len < SCENE_MIN_STRONG_KEY_LEN
+            )
             return _finish(
                 Intent(intent=IntentKind.APPLY_SCENE, scene=scene), vocabulary, partial=weak
             )
 
     if is_query:
-        query_targets = tuple(targets) if targets else ((ALL,) if all_word_seen else ())
+        # A bare on/off power word with no target named is a question about
+        # the current state, not a command: default it to "all" so it
+        # queries rather than actuating (D26 fix round 2, finding 1).
+        bare_power_only = power in ("on", "off") and brightness is None and colour is None
+        if targets:
+            query_targets = tuple(targets)
+        elif all_word_seen or bare_power_only:
+            query_targets = (ALL,)
+        else:
+            query_targets = ()
         if query_targets:
             return _finish(Intent(intent=IntentKind.QUERY, targets=query_targets), vocabulary)
 
@@ -256,7 +304,13 @@ def parse(text: str, vocabulary: Vocabulary) -> ParseResult:
             targets=final_targets,
             state=StateWords(power=power, brightness_pct=brightness, color=colour),
         )
-        return _finish(intent, vocabulary, partial=bool(leftover))
+        # A leftover word makes this partial only when it signals something
+        # tier 1 cannot itself act on: a deferred time, or two conflicting
+        # power words. Plain filler that normalise/FILLER didn't catch no
+        # longer blocks an otherwise-complete, offline-answerable command
+        # (D26 fix round 2, finding 3).
+        partial = time_word_seen or power_word_count >= 2
+        return _finish(intent, vocabulary, partial=partial)
 
     effective_targets = tuple(targets) if targets else ((ALL,) if all_word_seen else ())
     if effective_targets:

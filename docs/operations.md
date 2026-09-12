@@ -192,3 +192,6 @@ amber, yellow, green, teal, blue, purple, pink, white; warm, neutral, cool.
 Scenes by name, with "mode"/"lights"/"scene" ignored: "evening mode". A weak
 fuzzy match on a scene name is not acted on directly; it falls through to
 tier 2 for confirmation. Queries: "is ceiling one on", "are the lights on".
+Filler words such as "hey atlas", "lamp", "in", and "now" are ignored, and a
+timing word ("in five minutes", "later") makes tier 1 defer to tier 2 instead
+of guessing a schedule it cannot keep.
