@@ -61,7 +61,16 @@ class VoiceService:
 
         if (intent.intent is IntentKind.UNKNOWN or first.partial) and await self._tier2_allowed():
             assert self._tier2 is not None
-            hint = first.intent if first.intent.intent is not IntentKind.UNKNOWN else None
+            # A weak fuzzy scene guess ("bright" ~ "night") is not a
+            # trustworthy hint: passing it would bias tier 2 toward a scene
+            # it should be reasoning about fresh. A target-only hint still
+            # helps, so it still passes.
+            weak_scene_guess = first.partial and first.intent.intent is IntentKind.APPLY_SCENE
+            hint = (
+                first.intent
+                if first.intent.intent is not IntentKind.UNKNOWN and not weak_scene_guess
+                else None
+            )
             outcome = await self._tier2.parse(text, self._vocabulary, hint)
             tier, model = 2, outcome.model
             if outcome.usage is not None and self._budget is not None:
@@ -69,7 +78,9 @@ class VoiceService:
                     model=outcome.model, usage=outcome.usage, job_id=VOICE_JOB_ID, run_id=None
                 )
             if outcome.reason:
-                logger.info("tier-2 rejected (%s): %r", outcome.reason, text)
+                # Never log the utterance text here: it is user speech, and
+                # the reason plus tier is enough to see what happened.
+                logger.info("tier %d rejected: %s", tier, outcome.reason)
             intent = outcome.intent
         elif first.partial:
             # tier 1 was partial, but tier 2 wasn't run (unconfigured or
@@ -78,17 +89,22 @@ class VoiceService:
 
         result = await self._dispatch(intent)
         speech = compose(intent, result)
-        await self._log.add(
-            UtteranceRecord(
-                id=uuid.uuid4().hex,
-                heard_at=heard_at,
-                text=text,
-                tier=tier,
-                model=model,
-                intent=intent,
-                outcome=_outcome(intent, result),
+        try:
+            await self._log.add(
+                UtteranceRecord(
+                    id=uuid.uuid4().hex,
+                    heard_at=heard_at,
+                    text=text,
+                    tier=tier,
+                    model=model,
+                    intent=intent,
+                    outcome=_outcome(intent, result),
+                )
             )
-        )
+        except Exception:
+            # A logging failure must never turn a successful actuation into
+            # a 500: the bulb already did (or didn't) respond.
+            logger.exception("utterance log write failed")
         return VoiceResponse(speech=speech, intent=intent, tier=tier, result=result)
 
     async def _tier2_allowed(self) -> bool:

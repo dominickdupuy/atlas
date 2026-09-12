@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
+
+import pytest
 
 from atlas.connectors.application.gateway import ToolGateway
 from atlas.connectors.domain.tools import TokenUsage, ToolAllowlist
@@ -57,6 +60,7 @@ async def _build(
     tier2: bool = True,
     budget: _Budget | None = None,
     confirm_timeout: float = 1.0,
+    log: _MemoryLog | None = None,
 ) -> tuple[VoiceService, LightsService, StubMatterController, _MemoryLog, _Budget]:
     stub = StubMatterController()
     registry = LightsRegistry.load(FIXTURE)
@@ -69,7 +73,7 @@ async def _build(
     )
     await lights.start()
     tools = LightsTools(lights)
-    log = _MemoryLog()
+    log = log if log is not None else _MemoryLog()
     budget = budget or _Budget()
     parser = (
         LlmIntentParser(
@@ -127,6 +131,20 @@ async def test_tier2_gets_the_partial_as_a_hint() -> None:
     response = await service.handle("ceiling two")
     assert response.tier == 2
     assert response.speech == "Ceiling 2 on."
+    provider = cast(StubLlmProvider, service._tier2._llm)  # type: ignore[union-attr]
+    assert "Hint" in provider.requests[0].prompt
+
+
+async def test_weak_scene_guess_is_not_passed_as_tier2_hint() -> None:
+    """Finding 5: 'bright' fuzzy-matches the 'night' scene at a weak ratio
+    (see test_tier1's test_weak_fuzzy_scene_match_is_partial). That guess is
+    not trustworthy enough to steer tier 2, unlike a target-only hint
+    (test_tier2_gets_the_partial_as_a_hint)."""
+    service, _, _, _, _ = await _build()
+    await service.handle("bright")
+    provider = cast(StubLlmProvider, service._tier2._llm)  # type: ignore[union-attr]
+    assert len(provider.requests) == 1
+    assert "Hint" not in provider.requests[0].prompt
 
 
 async def test_budget_gate_closes_tier2() -> None:
@@ -170,3 +188,31 @@ async def test_partial_failure_names_the_bulb_not_the_controller() -> None:
     assert response.speech == "Bedroom off, ceiling 3 didn't respond."
     assert log.records[-1].outcome == "partial"
     assert response.result is not None and response.result["failed"] == ["ceiling-3"]
+
+
+async def test_tier2_rejection_log_omits_the_utterance_text(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Finding 8a: the info log on a tier-2 rejection must carry the reason
+    and the tier, never the spoken text."""
+    reply = '{"intent": "apply_scene", "scene": "not-a-real-scene"}'
+    service, _, _, _, _ = await _build(llm_replies=(reply,))
+    secret_text = "do a barrel roll for me please"
+    with caplog.at_level("INFO"):
+        response = await service.handle(secret_text)
+    assert response.speech == "Didn't catch that."
+    assert not any(secret_text in record.getMessage() for record in caplog.records)
+    assert any("rejected" in record.getMessage() for record in caplog.records)
+
+
+class _FailingLog(_MemoryLog):
+    async def add(self, record: UtteranceRecord) -> None:
+        raise RuntimeError("disk full")
+
+
+async def test_log_write_failure_never_fails_the_response() -> None:
+    """Finding 12: a logging failure must not turn a successful actuation
+    into a 500 -- the bulb already did (or didn't) respond."""
+    service, _, _, _, _ = await _build(log=_FailingLog())
+    response = await service.handle("bedroom on")
+    assert response.speech == "Bedroom on."
