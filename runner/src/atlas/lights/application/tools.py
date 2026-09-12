@@ -10,7 +10,12 @@ from typing import cast
 from pydantic import JsonValue, ValidationError
 
 from atlas.lights.application.registry import UnknownTarget
-from atlas.lights.application.service import ApplyOutcome, LightsService, UnknownScene
+from atlas.lights.application.service import (
+    CONTROLLER_UNAVAILABLE,
+    ApplyOutcome,
+    LightsService,
+    UnknownScene,
+)
 from atlas.lights.domain.model import LightCommand
 
 
@@ -65,19 +70,25 @@ class LightsTools:
                 # The bulb may still have obeyed; the device did not confirm in time.
                 failed.append(name)
                 errors[name] = outcome.error or "unconfirmed"
-        return {
+        payload: dict[str, JsonValue] = {
             "applied": cast(list[JsonValue], applied),
             "failed": cast(list[JsonValue], failed),
             "errors": errors,
             "states": states,
         }
+        if not applied and errors and all(v == CONTROLLER_UNAVAILABLE for v in errors.values()):
+            payload["error"] = CONTROLLER_UNAVAILABLE
+        return payload
 
     async def activate_scene(self, name: str) -> dict[str, JsonValue]:
         try:
             result = await self._service.activate(name)
         except UnknownScene as exc:
             return {"scene": name, "applied": [], "failed": [], "errors": {"scene": str(exc)}}
-        return dict(result.model_dump(mode="json"))
+        dumped = dict(result.model_dump(mode="json"))
+        if not result.applied and result.snapshot.error == CONTROLLER_UNAVAILABLE:
+            dumped["error"] = CONTROLLER_UNAVAILABLE
+        return dumped
 
     def state(self) -> dict[str, JsonValue]:
         return dict(self._service.snapshot().model_dump(mode="json"))

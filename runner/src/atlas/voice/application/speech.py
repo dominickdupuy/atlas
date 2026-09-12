@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from pydantic import JsonValue
 
 from atlas.lights.application.registry import ALL
+from atlas.lights.application.service import CONTROLLER_UNAVAILABLE
 from atlas.voice.domain.intent import Intent, IntentKind
 
 DIDNT_CATCH = "Didn't catch that."
@@ -40,31 +41,8 @@ def _failed_suffix(failed: Sequence[str]) -> str:
     return f", {len(failed)} lights didn't respond"
 
 
-_CONTROLLER_UNAVAILABLE = "controller unavailable"
-
-
-def _mentions_controller_down(value: JsonValue) -> bool:
-    """Search a gateway result for the controller-unavailable marker.
-
-    It can surface at the top ("error", from a gateway-level failure or a
-    state() query), inside a per-light "errors" map (a set() call where every
-    target failed the same way), or nested in a scene's snapshot — so this
-    walks the whole JSON value rather than assuming one shape."""
-    if isinstance(value, str):
-        return _CONTROLLER_UNAVAILABLE in value
-    if isinstance(value, dict):
-        return any(_mentions_controller_down(v) for v in value.values())
-    if isinstance(value, list):
-        return any(_mentions_controller_down(v) for v in value)
-    return False
-
-
-def _is_controller_down(result: dict[str, JsonValue] | None) -> bool:
-    return result is not None and _mentions_controller_down(result)
-
-
 def compose(intent: Intent, result: dict[str, JsonValue] | None) -> str:
-    if _is_controller_down(result):
+    if result is not None and result.get("error") == CONTROLLER_UNAVAILABLE:
         return CONTROLLER_DOWN
     match intent.intent:
         case IntentKind.UNKNOWN:

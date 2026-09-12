@@ -13,7 +13,7 @@ from atlas.shared.events import InProcessEventBus
 FIXTURE = Path(__file__).parent.parent.parent / "fixtures" / "lights.yaml"
 
 
-async def _tools() -> tuple[LightsTools, StubMatterController]:
+async def _tools() -> tuple[LightsTools, StubMatterController, LightsService]:
     stub = StubMatterController()
     service = LightsService(
         registry=LightsRegistry.load(FIXTURE),
@@ -22,11 +22,11 @@ async def _tools() -> tuple[LightsTools, StubMatterController]:
         clock=FrozenClock(datetime(2026, 9, 12, 20, 0, tzinfo=UTC)),
     )
     await service.start()
-    return LightsTools(service), stub
+    return LightsTools(service), stub, service
 
 
 async def test_set_lights_expands_groups_and_reports() -> None:
-    tools, _ = await _tools()
+    tools, _, _ = await _tools()
     result = await tools.set_lights(["bedroom"], {"brightness": 40, "color_temp_k": 2700})
     assert sorted(result["applied"]) == ["ceiling-1", "ceiling-2", "ceiling-3", "ceiling-4"]  # type: ignore[type-var, arg-type]
     assert result["failed"] == []
@@ -34,13 +34,13 @@ async def test_set_lights_expands_groups_and_reports() -> None:
 
 
 async def test_toggle() -> None:
-    tools, _ = await _tools()
+    tools, _, _ = await _tools()
     result = await tools.set_lights(["ceiling-1"], {}, toggle=True)
     assert result["states"]["ceiling-1"]["on"] is True  # type: ignore[call-overload, index]
 
 
 async def test_unknown_target_is_reported_not_raised() -> None:
-    tools, _ = await _tools()
+    tools, _, _ = await _tools()
     result = await tools.set_lights(["kitchen", "ceiling-1"], {"on": True})
     assert result["applied"] == ["ceiling-1"]
     assert result["failed"] == ["kitchen"]
@@ -48,7 +48,23 @@ async def test_unknown_target_is_reported_not_raised() -> None:
 
 
 async def test_scene_and_state() -> None:
-    tools, _ = await _tools()
+    tools, _, _ = await _tools()
     scene = await tools.activate_scene("off")
     assert scene["failed"] == []
     assert tools.state()["lights"]["ceiling-1"]["on"] is False  # type: ignore[call-overload, index]
+
+
+async def test_set_lights_reports_controller_unavailable() -> None:
+    tools, _, service = await _tools()
+    await service.on_disconnected()
+    result = await tools.set_lights(["bedroom"], {"on": False})
+    assert result["applied"] == []
+    assert result["error"] == "controller unavailable"
+
+
+async def test_activate_scene_reports_controller_unavailable() -> None:
+    tools, _, service = await _tools()
+    await service.on_disconnected()
+    result = await tools.activate_scene("off")
+    assert result["applied"] == []
+    assert result["error"] == "controller unavailable"

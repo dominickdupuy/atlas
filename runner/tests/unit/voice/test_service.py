@@ -52,12 +52,20 @@ class _Budget:
 
 
 async def _build(
-    *, llm_replies: tuple[str, ...] = (), tier2: bool = True, budget: _Budget | None = None
+    *,
+    llm_replies: tuple[str, ...] = (),
+    tier2: bool = True,
+    budget: _Budget | None = None,
+    confirm_timeout: float = 1.0,
 ) -> tuple[VoiceService, LightsService, StubMatterController, _MemoryLog, _Budget]:
     stub = StubMatterController()
     registry = LightsRegistry.load(FIXTURE)
     lights = LightsService(
-        registry=registry, controller=stub, bus=InProcessEventBus(), clock=FrozenClock(NOW)
+        registry=registry,
+        controller=stub,
+        bus=InProcessEventBus(),
+        clock=FrozenClock(NOW),
+        confirm_timeout=confirm_timeout,
     )
     await lights.start()
     tools = LightsTools(lights)
@@ -149,3 +157,16 @@ async def test_controller_down_is_spoken() -> None:
     response = await service.handle("lights off")
     assert response.speech == "The lights controller is offline."
     assert log.records[-1].outcome == "failed"
+
+
+async def test_partial_failure_names_the_bulb_not_the_controller() -> None:
+    service, _, stub, log, _ = await _build(confirm_timeout=0.05)
+    # Turn the bedroom on first: the bulbs start off, and "off" on an
+    # already-off bulb confirms trivially with no wait, which would hide the
+    # silent node's failure to respond.
+    await service.handle("bedroom on")
+    stub.silent_nodes = {3}
+    response = await service.handle("bedroom off")
+    assert response.speech == "Bedroom off, ceiling 3 didn't respond."
+    assert log.records[-1].outcome == "partial"
+    assert response.result is not None and response.result["failed"] == ["ceiling-3"]
