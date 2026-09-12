@@ -14,7 +14,7 @@ from pydantic import JsonValue
 
 from atlas.lights.application.ports import ControllerUnavailable, MatterError, MatterNode
 from atlas.lights.infrastructure.matter_ws import MatterWsClient, SchemaMismatch
-from atlas.telemetry.infrastructure.mqtt_bus import ReconnectBackoff
+from atlas.shared.backoff import ReconnectBackoff
 
 SERVER_INFO = {
     "fabric_id": 1,

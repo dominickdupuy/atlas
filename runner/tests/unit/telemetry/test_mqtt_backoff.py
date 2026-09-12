@@ -16,12 +16,9 @@ from datetime import UTC, datetime
 import aiomqtt
 import pytest
 
+from atlas.shared.backoff import ReconnectBackoff
 from atlas.telemetry.domain.envelope import EventEnvelope
-from atlas.telemetry.infrastructure.mqtt_bus import (
-    AiomqttEventBus,
-    MqttClient,
-    ReconnectBackoff,
-)
+from atlas.telemetry.infrastructure.mqtt_bus import AiomqttEventBus, MqttClient
 
 # --- the pure policy -------------------------------------------------------
 

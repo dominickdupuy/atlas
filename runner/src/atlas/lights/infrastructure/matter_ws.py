@@ -29,7 +29,7 @@ from atlas.lights.application.ports import (
     MatterNode,
     ServerInfo,
 )
-from atlas.telemetry.infrastructure.mqtt_bus import ReconnectBackoff
+from atlas.shared.backoff import ReconnectBackoff
 
 logger = logging.getLogger(__name__)
 
