@@ -92,3 +92,53 @@ Before any community server gets a credential:
 `restic` over the data volumes; exclude or encrypt secrets (section 8).
 Config is reproducible from git — only `atlas-data` (SQLite) and
 `homeassistant/` runtime state are worth backing up.
+
+## Lights (Matter)
+
+The controller is `matter-server` in `compose.yaml` (profile `matter`), reached by
+the runner at `ws://127.0.0.1:5580/ws`. Start it once; `restart: unless-stopped`
+covers reboots.
+
+```sh
+cd /opt/atlas && docker compose --profile matter up -d matter-server
+docker compose logs -f matter-server        # first start migrates nothing; expect "listening on 127.0.0.1:5580"
+```
+
+### Commissioning a bulb that lives in Apple Home
+
+The bulbs stay in Apple Home; atlas joins as a second admin. Per bulb:
+
+1. Home app, the bulb, settings, **Turn On Pairing Mode**. Note the code.
+2. On atlas, from `/opt/atlas/runner`: `uv run --frozen atlas lights commission <code>`.
+   The controller finds the bulb on the LAN and prints the new node ID.
+3. `uv run --frozen atlas lights identify <node_id>` blinks it. Add it to
+   `lights.yaml` under its name (`ceiling-1` to `ceiling-4`).
+4. After all four: commit `lights.yaml`, `sudo systemctl restart atlas`.
+
+`uv run --frozen atlas lights nodes` lists what the controller knows, with names.
+A failed commission prints the controller's error name; `NodeCommissionFailed`
+usually means the Apple Home pairing window expired. Open it again and retry.
+
+### Controller dashboard
+
+Unauthenticated, loopback only. From your machine:
+`ssh -L 5580:127.0.0.1:5580 domdd@atlas` then open <http://127.0.0.1:5580/>.
+
+### HTTPS front door
+
+`sudo tailscale serve --bg --https=443 http://127.0.0.1:8100` once (D23).
+`tailscale serve status` shows it. The runner stays on loopback. Set
+`ATLAS_PUBLIC_URL=https://atlas.tail5c9e82.ts.net` in `/etc/atlas/atlas.env`.
+
+### Control
+
+```sh
+T=$(sudo grep ATLAS_API_TOKEN /etc/atlas/atlas.env | cut -d= -f2)
+curl -s -H "Authorization: Bearer $T" https://atlas.tail5c9e82.ts.net/api/lights | jq
+curl -s -H "Authorization: Bearer $T" -H 'Content-Type: application/json' \
+  -d '{"brightness": 40, "color_temp_k": 2700}' https://atlas.tail5c9e82.ts.net/api/lights/ceiling-1
+curl -s -X POST -H "Authorization: Bearer $T" https://atlas.tail5c9e82.ts.net/api/lights/scenes/evening/activate
+```
+
+Every confirmed change, from atlas or from Apple Home, publishes
+`atlas/lights/<name>/changed`.

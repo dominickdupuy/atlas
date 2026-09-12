@@ -23,6 +23,9 @@ tz = "America/New_York"
 # Runtime state. Must be writable by the atlas service user.
 db_path = "/opt/atlas/runner/data/state.db"
 jobs_dir = "/opt/atlas/jobs"
+# Light names, node IDs, groups, scenes. Node IDs start as placeholders and
+# are filled in as each bulb is commissioned. Default is fine on the Pi.
+# lights_file = "../lights.yaml"
 
 mqtt_host = "127.0.0.1"
 mqtt_port = 1883

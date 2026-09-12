@@ -8,6 +8,7 @@
 #   (none)   mosquitto + ntfy + runner. Works on any dev machine with zero
 #            credentials via ATLAS_PROFILE=dev (stub connectors).
 #   ha       Home Assistant. Required on the Pi, optional in dev.
+#   matter   matterjs-server, the lights controller (D21). Required on the Pi for lights.
 #   mcp      MCP connector servers (real, scoped credentials required — D19).
 #   voice    Wyoming STT/TTS services, phase 6. See docs/voice.md.
 
@@ -80,6 +81,26 @@ services:
       - ./homeassistant:/config
       - /etc/localtime:/etc/localtime:ro
 
+  # --- Matter controller (lights context, D20/D21) ---------------------------
+  # matterjs-server, the successor to python-matter-server (8.1.2 was the
+  # Python server's final release; same WebSocket API). Host networking is
+  # mandatory for mDNS and IPv6 link-local. The WebSocket and dashboard are
+  # unauthenticated, so they bind to loopback only; reach the dashboard with
+  # an ssh tunnel. No Bluetooth: the bulbs are commissioned network-only from
+  # an Apple Home pairing code (spec 6), so no /run/dbus mount either.
+  matter-server:
+    image: ghcr.io/matter-js/matterjs-server:1.4.0
+    profiles: [matter]
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      LISTEN_ADDRESS: 127.0.0.1
+      STORAGE_PATH: /data
+      LOG_LEVEL: info
+    volumes:
+      # Fabric keys. A named volume: /opt/atlas is git-reset on every deploy.
+      - matter-data:/data
+
   # --- MCP connector servers (phase 5, D19) ---------------------------------
   # Official GitHub MCP server. Credential: fine-grained READ-ONLY PAT scoped
   # to the repos it needs — provider-side scoping is the first layer of
@@ -125,3 +146,4 @@ volumes:
   ntfy-auth:
   ntfy-cache:
   atlas-data:
+  matter-data:

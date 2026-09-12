@@ -15,7 +15,8 @@ machine (including the Pi itself): [docs/development.md](docs/development.md).
 |---|---|
 | `runner/` | The custom service: a Python modular monolith (bounded contexts, D18) |
 | `jobs/` | One YAML per scheduled job, validated against the schema in the spec §7 |
-| `compose.yaml` | The whole stack. Profiles: `ha`, `mcp`, `voice` |
+| `compose.yaml` | The whole stack. Profiles: `ha`, `matter`, `mcp`, `voice` |
+| `lights.yaml` | Light names, node IDs, groups, scenes (D27) |
 | `homeassistant/` | Home Assistant config (runtime state gitignored) |
 | `infra/` | Broker/ntfy config, systemd units for the Pi |
 | `docs/` | Architecture spec, runbook, development guide, voice setup notes |
