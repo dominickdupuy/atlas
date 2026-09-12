@@ -12,7 +12,7 @@ import pytest
 
 from atlas.lights.application.ports import ControllerUnavailable
 from atlas.lights.application.registry import LightsRegistry
-from atlas.lights.application.service import LightsService, UnknownLight, UnknownScene
+from atlas.lights.application.service import ApplyOutcome, LightsService, UnknownLight, UnknownScene
 from atlas.lights.domain.events import ControllerConnectivityChanged, LightChanged
 from atlas.lights.domain.matter import LEVEL_CLUSTER
 from atlas.lights.domain.model import LightCommand, UnsupportedFeature
@@ -54,11 +54,14 @@ async def test_start_seeds_the_cache_from_the_controller() -> None:
 
 async def test_apply_sends_the_plan_and_returns_confirmed_state() -> None:
     service, stub, recorder, _ = await _service()
-    state = await service.apply("ceiling-2", LightCommand(brightness=40, color_temp_k=2700))
+    outcome = await service.apply("ceiling-2", LightCommand(brightness=40, color_temp_k=2700))
     assert [s[3] for s in stub.sent] == ["moveToColorTemperature", "moveToLevelWithOnOff", "on"]
-    assert state.on is True
-    assert state.brightness == 40
-    assert state.color_temp_k == 2703
+    assert isinstance(outcome, ApplyOutcome)
+    assert outcome.confirmed is True
+    assert outcome.error is None
+    assert outcome.state.on is True
+    assert outcome.state.brightness == 40
+    assert outcome.state.color_temp_k == 2703
     changed = [e for e in recorder.of_type(LightChanged) if e.name == "ceiling-2"]  # type: ignore[attr-defined]
     assert changed, "every confirmed attribute change publishes LightChanged"
 
@@ -73,8 +76,10 @@ async def test_apply_never_writes_the_cache_optimistically() -> None:
 
     stub.send = silent_send  # type: ignore[method-assign]
     service, _, _, _ = await _service(stub, confirm_timeout=0.01)
-    state = await service.apply("ceiling-1", LightCommand(on=True))
-    assert state.on is False, "unconfirmed: cache keeps the last confirmed value"
+    outcome = await service.apply("ceiling-1", LightCommand(on=True))
+    assert outcome.confirmed is False
+    assert outcome.error == "no confirmation within 0.0s"
+    assert outcome.state.on is False, "unconfirmed: cache keeps the last confirmed value"
     assert service.snapshot().lights["ceiling-1"].on is False
 
 
@@ -84,15 +89,15 @@ async def test_apply_color_temp_on_an_off_bulb_lands_the_colour_and_turns_it_on(
     on later at its old colour (spec 4.1)."""
     service, _, _, _ = await _service()
     assert service.get("ceiling-1").on is False
-    state = await service.apply("ceiling-1", LightCommand(color_temp_k=2700))
-    assert state.on is True
-    assert state.color_temp_k == 2703
+    outcome = await service.apply("ceiling-1", LightCommand(color_temp_k=2700))
+    assert outcome.state.on is True
+    assert outcome.state.color_temp_k == 2703
 
 
 async def test_toggle_flips_power() -> None:
     service, _, _, _ = await _service()
-    assert (await service.toggle("ceiling-3")).on is True
-    assert (await service.toggle("ceiling-3")).on is False
+    assert (await service.toggle("ceiling-3")).state.on is True
+    assert (await service.toggle("ceiling-3")).state.on is False
 
 
 async def test_external_change_updates_cache_and_publishes() -> None:
@@ -206,10 +211,11 @@ async def test_disconnect_during_apply_never_confirms() -> None:
         await service.on_disconnected()
 
     disconnector = asyncio.create_task(disconnect_soon())
-    state, confirmed = await service._apply("ceiling-1", LightCommand(on=True))
+    outcome = await service.apply("ceiling-1", LightCommand(on=True))
     await disconnector
-    assert confirmed is False, "a disconnect wake must never confirm"
-    assert state.on is False
+    assert outcome.confirmed is False, "a disconnect wake must never confirm"
+    assert outcome.error is not None
+    assert outcome.state.on is False
 
 
 async def test_disconnect_during_activate_reports_failure() -> None:
@@ -257,10 +263,12 @@ async def test_apply_partial_multi_command_confirmation_is_not_confirmed() -> No
     stub.send = level_silent_send  # type: ignore[method-assign]
     service, _, _, _ = await _service(stub, confirm_timeout=0.05)
 
-    state = await service.apply("ceiling-1", LightCommand(brightness=40, color_temp_k=2700))
-    assert state.brightness == 100, "unconfirmed: brightness keeps the last confirmed value"
-    assert state.on is True
-    assert state.color_temp_k == 2703
+    outcome = await service.apply("ceiling-1", LightCommand(brightness=40, color_temp_k=2700))
+    assert outcome.confirmed is False
+    assert outcome.error is not None
+    assert outcome.state.brightness == 100, "unconfirmed: brightness keeps the last confirmed value"
+    assert outcome.state.on is True
+    assert outcome.state.color_temp_k == 2703
 
     result = await service.activate("evening")
     assert "ceiling-1" in result.failed
@@ -279,7 +287,8 @@ async def test_apply_already_satisfied_confirms_without_waiting() -> None:
 
     stub.send = silent_send  # type: ignore[method-assign]
     service, _, _, _ = await _service(stub, confirm_timeout=0.05)
-    state, confirmed = await service._apply("ceiling-1", LightCommand(brightness=100))
-    assert confirmed is True
-    assert state.on is True
-    assert state.brightness == 100
+    outcome = await service.apply("ceiling-1", LightCommand(brightness=100))
+    assert outcome.confirmed is True
+    assert outcome.error is None
+    assert outcome.state.on is True
+    assert outcome.state.brightness == 100

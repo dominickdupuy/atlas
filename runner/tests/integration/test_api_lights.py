@@ -42,6 +42,27 @@ async def test_apply_returns_confirmed_state(client: AsyncClient) -> None:
     assert body["on"] is True
     assert body["brightness"] == 60
     assert body["color_temp_k"] == 2703
+    assert body["confirmed"] is True
+    assert body["error"] is None
+
+
+async def test_unconfirmed_write_is_200_with_confirmed_false(
+    client: AsyncClient, application: Application
+) -> None:
+    """Spec 4.2: an unconfirmed write is not an error at the edge. It
+    returns the last-known state, 200, with confirmed=False and an error
+    naming the timeout."""
+    assert application.lights is not None
+    stub = application.lights._controller
+    stub.silent_nodes.add(1)  # type: ignore[attr-defined]
+    application.lights._confirm_timeout = 0.01
+
+    response = await client.post("/api/lights/ceiling-1", headers=AUTH, json={"on": True})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["confirmed"] is False
+    assert body["error"] is not None
+    assert body["on"] is False, "unconfirmed: last-known state, not the request"
 
 
 async def test_apply_hue_and_saturation(client: AsyncClient) -> None:
@@ -68,6 +89,7 @@ async def test_bad_command_is_422(client: AsyncClient) -> None:
 async def test_toggle(client: AsyncClient) -> None:
     first = await client.post("/api/lights/ceiling-3/toggle", headers=AUTH)
     assert first.status_code == 200 and first.json()["on"] is True
+    assert first.json()["confirmed"] is True
     second = await client.post("/api/lights/ceiling-3/toggle", headers=AUTH)
     assert second.json()["on"] is False
 

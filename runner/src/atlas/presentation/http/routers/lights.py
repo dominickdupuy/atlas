@@ -2,6 +2,13 @@
 middleware. Errors are JSONResponses with a status code, like approvals.py:
 404 unknown light or scene, 409 feature unsupported, 503 controller down,
 422 bad command (FastAPI's own validation of LightCommand).
+
+A single-light write (POST /{name}, POST /{name}/toggle) always returns 200
+on success: the body is the light's state plus `confirmed` and `error`
+(spec 4.2). An unconfirmed write is not a failure at the edge - the
+controller accepted the plan and the bulb may still have obeyed - so it
+comes back as `confirmed: false` with `error` naming the timeout, not a
+different status code.
 """
 
 from __future__ import annotations
@@ -19,7 +26,9 @@ from atlas.presentation.http.routers._deps import get_application
 
 router = APIRouter(prefix="/api/lights")
 
-_NOT_CONFIGURED = JSONResponse({"detail": "lights are not configured"}, status_code=404)
+
+def _not_configured() -> JSONResponse:
+    return JSONResponse({"detail": "lights are not configured"}, status_code=404)
 
 
 def _service(application: Application) -> LightsService | None:
@@ -32,7 +41,7 @@ async def list_lights(
 ) -> JSONResponse:
     service = _service(application)
     if service is None:
-        return _NOT_CONFIGURED
+        return _not_configured()
     return JSONResponse(service.snapshot().model_dump(mode="json"))
 
 
@@ -42,7 +51,7 @@ async def list_scenes(
 ) -> JSONResponse:
     service = _service(application)
     if service is None:
-        return _NOT_CONFIGURED
+        return _not_configured()
     return JSONResponse(
         [{"name": scene.name, "lights": sorted(scene.states)} for scene in service.scenes()]
     )
@@ -55,7 +64,7 @@ async def activate_scene(
 ) -> JSONResponse:
     service = _service(application)
     if service is None:
-        return _NOT_CONFIGURED
+        return _not_configured()
     try:
         result = await service.activate(scene_name)
     except UnknownScene:
@@ -70,7 +79,7 @@ async def get_light(
 ) -> JSONResponse:
     service = _service(application)
     if service is None:
-        return _NOT_CONFIGURED
+        return _not_configured()
     try:
         state = service.get(name)
     except UnknownLight:
@@ -86,16 +95,22 @@ async def set_light(
 ) -> JSONResponse:
     service = _service(application)
     if service is None:
-        return _NOT_CONFIGURED
+        return _not_configured()
     try:
-        state = await service.apply(name, body)
+        outcome = await service.apply(name, body)
     except UnknownLight:
         return JSONResponse({"detail": f"unknown light {name!r}"}, status_code=404)
     except UnsupportedFeature as exc:
         return JSONResponse({"detail": str(exc)}, status_code=409)
     except ControllerUnavailable as exc:
         return JSONResponse({"detail": str(exc)}, status_code=503)
-    return JSONResponse(state.model_dump(mode="json"))
+    return JSONResponse(
+        {
+            **outcome.state.model_dump(mode="json"),
+            "confirmed": outcome.confirmed,
+            "error": outcome.error,
+        }
+    )
 
 
 @router.post("/{name}/toggle")
@@ -105,11 +120,17 @@ async def toggle_light(
 ) -> JSONResponse:
     service = _service(application)
     if service is None:
-        return _NOT_CONFIGURED
+        return _not_configured()
     try:
-        state = await service.toggle(name)
+        outcome = await service.toggle(name)
     except UnknownLight:
         return JSONResponse({"detail": f"unknown light {name!r}"}, status_code=404)
     except ControllerUnavailable as exc:
         return JSONResponse({"detail": str(exc)}, status_code=503)
-    return JSONResponse(state.model_dump(mode="json"))
+    return JSONResponse(
+        {
+            **outcome.state.model_dump(mode="json"),
+            "confirmed": outcome.confirmed,
+            "error": outcome.error,
+        }
+    )

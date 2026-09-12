@@ -45,6 +45,9 @@ class StubMatterController:
         self.sent: list[tuple[int, int, int, str, dict[str, int]]] = []
         self.removed: list[int] = []
         self.commissioned: list[str] = []
+        # Nodes whose commands are recorded in `.sent` but never confirmed,
+        # for testing the unconfirmed-write path (spec 4.2).
+        self.silent_nodes: set[int] = set()
 
     def subscribe(self, listener: ControllerListener) -> None:
         self._listeners.append(listener)
@@ -71,6 +74,8 @@ class StubMatterController:
         self, node_id: int, endpoint_id: int, cluster_id: int, name: str, payload: dict[str, int]
     ) -> None:
         self.sent.append((node_id, endpoint_id, cluster_id, name, payload))
+        if node_id in self.silent_nodes:
+            return
         base = f"{endpoint_id}"
         if cluster_id == ONOFF_CLUSTER:
             if name == "toggle":

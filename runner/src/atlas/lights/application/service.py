@@ -67,6 +67,20 @@ class LightsSnapshot(BaseModel):
     error: str | None = None
 
 
+class ApplyOutcome(BaseModel):
+    """Result of a single-light write (spec 4.2). `error` is set exactly
+    when `confirmed` is False: the controller accepted the plan, but no
+    matching attribute event arrived within the confirmation timeout. The
+    bulb may still have obeyed; `state` is the last-known state either way,
+    never the requested one."""
+
+    model_config = ConfigDict(frozen=True)
+
+    state: LightState
+    confirmed: bool
+    error: str | None = None
+
+
 class SceneResult(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -245,20 +259,18 @@ class LightsService:
 
     # --- commands ----------------------------------------------------------
 
-    async def apply(self, name: str, command: LightCommand) -> LightState:
-        state, _ = await self._apply(name, command)
-        return state
-
-    async def _apply(self, name: str, command: LightCommand) -> tuple[LightState, bool]:
+    async def apply(self, name: str, command: LightCommand) -> ApplyOutcome:
         """Send the plan and wait, bounded, for the device to confirm it.
 
-        The bool reports whether the resulting state satisfies the command
-        before the timeout; `activate` needs that (not just an unchanged
-        state, which a bulb already in the requested state would also
-        produce) to tell a confirmed no-op from a failed one. It is *not*
-        "an attribute-change event fired": a multi-command apply can wake on
-        a partial confirmation, and a disconnect wakes every waiter without
-        confirming anything.
+        An unconfirmed write is not an exception: the controller accepted
+        the plan, so the caller gets the last-known state back with `error`
+        set, per spec 4.2, rather than a failure that hides a bulb that may
+        still have obeyed. `activate` reads `confirmed` off the outcome
+        (not just an unchanged state, which a bulb already in the requested
+        state would also produce) to tell a confirmed no-op from a failed
+        one. Confirmed is *not* "an attribute-change event fired": a
+        multi-command apply can wake on a partial confirmation, and a
+        disconnect wakes every waiter without confirming anything.
         """
         entry = self._entry(name)
         if not self._connected:
@@ -280,7 +292,8 @@ class LightsService:
             ok = await self._await_satisfied(entry, command, confirmed)
         finally:
             entry.waiters.remove(confirmed)
-        return entry.state, ok
+        error = None if ok else f"no confirmation within {self._confirm_timeout:.1f}s"
+        return ApplyOutcome(state=entry.state, confirmed=ok, error=error)
 
     async def _await_satisfied(
         self, entry: _Entry, command: LightCommand, confirmed: asyncio.Event
@@ -315,7 +328,7 @@ class LightsService:
                 return False
             confirmed.clear()
 
-    async def toggle(self, name: str) -> LightState:
+    async def toggle(self, name: str) -> ApplyOutcome:
         current = self._entry(name).state
         return await self.apply(name, LightCommand(on=not current.on))
 
@@ -326,11 +339,11 @@ class LightsService:
 
         async def one(name: str, command: LightCommand) -> tuple[str, bool]:
             try:
-                _, confirmed = await self._apply(name, command)
+                outcome = await self.apply(name, command)
             except Exception:
                 logger.exception("scene %s: %s failed", scene_name, name)
                 return name, False
-            return name, confirmed
+            return name, outcome.confirmed
 
         results = await asyncio.gather(*(one(n, c) for n, c in scene.states.items()))
         applied = tuple(name for name, ok in results if ok)
