@@ -9,6 +9,8 @@ from atlas.budget.domain.events import BudgetStatusChanged
 from atlas.budget.domain.ledger import usd
 from atlas.budget.domain.policy import evaluate
 from atlas.jobs.domain.events import JobRunCompleted, JobRunFailed, JobRunStarted
+from atlas.lights.domain.events import ControllerConnectivityChanged, LightChanged
+from atlas.lights.domain.model import LightState
 from atlas.shared.ids import ApprovalId, JobId, RunId
 from atlas.telemetry.domain.topics import DisplayModeChanged, SystemHealth, envelope_for
 
@@ -92,3 +94,27 @@ def test_singleton_topics() -> None:
     assert budget is not None and budget.topic == "atlas/budget/status"
     assert mode is not None and mode.topic == "atlas/display/mode"
     assert health is not None and health.topic == "atlas/system/health"
+
+
+def test_light_changed_maps_to_the_lights_topic_without_provenance() -> None:
+    now = datetime(2026, 9, 12, 20, 0, tzinfo=UTC)
+    event = LightChanged(
+        occurred_at=now,
+        name="ceiling-1",
+        state=LightState(on=True, brightness=40, color_temp_k=2700, observed_at=now),
+    )
+    envelope = envelope_for(event)
+    assert envelope is not None
+    assert envelope.topic == "atlas/lights/ceiling-1/changed"
+    assert envelope.payload["on"] is True
+    assert envelope.payload["brightness"] == 40
+    assert "source" not in envelope.payload
+
+
+def test_controller_connectivity_maps_to_up_and_down() -> None:
+    now = datetime(2026, 9, 12, 20, 0, tzinfo=UTC)
+    up = envelope_for(ControllerConnectivityChanged(occurred_at=now, connected=True))
+    down = envelope_for(ControllerConnectivityChanged(occurred_at=now, connected=False))
+    assert up is not None and up.topic == "atlas/lights/controller/up"
+    assert down is not None and down.topic == "atlas/lights/controller/down"
+    assert down.payload == {"connected": False}

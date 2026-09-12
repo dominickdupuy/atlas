@@ -6,6 +6,8 @@ namespace strings live.
     atlas/display/mode
     atlas/budget/status
     atlas/system/health
+    atlas/lights/<name>/changed
+    atlas/lights/controller/up|down
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ from atlas.jobs.domain.events import (
     JobRunFailed,
     JobRunStarted,
 )
+from atlas.lights.domain.events import ControllerConnectivityChanged, LightChanged
 from atlas.shared.events import DomainEvent
 from atlas.telemetry.domain.envelope import EventEnvelope
 
@@ -30,9 +33,14 @@ def job_topic(job_id: str, suffix: str) -> str:
     return f"{ROOT}/jobs/{job_id}/{suffix}"
 
 
+def lights_topic(name: str) -> str:
+    return f"{ROOT}/lights/{name}/changed"
+
+
 DISPLAY_MODE_TOPIC = f"{ROOT}/display/mode"
 BUDGET_STATUS_TOPIC = f"{ROOT}/budget/status"
 SYSTEM_HEALTH_TOPIC = f"{ROOT}/system/health"
+LIGHTS_CONTROLLER_TOPIC = f"{ROOT}/lights/controller"
 
 
 class DisplayModeChanged(DomainEvent):
@@ -96,6 +104,12 @@ def envelope_for(event: DomainEvent) -> EventEnvelope | None:
         case SystemHealth():
             topic = SYSTEM_HEALTH_TOPIC
             payload = {"healthy": event.healthy, **event.detail}
+        case LightChanged():
+            topic = lights_topic(event.name)
+            payload = dict(event.state.model_dump(mode="json"))
+        case ControllerConnectivityChanged():
+            topic = f"{LIGHTS_CONTROLLER_TOPIC}/{'up' if event.connected else 'down'}"
+            payload = {"connected": event.connected}
         case _:
             return None
     return EventEnvelope(topic=topic, payload=payload, occurred_at=event.occurred_at)
