@@ -142,7 +142,13 @@ def plan(
     endpoint = light.endpoint_id
     features = capabilities.features
     transition = ms_to_tenths(command.transition_ms)
-    options = {"transitionTime": transition, "optionsMask": 0, "optionsOverride": 0}
+    level_options = {"transitionTime": transition, "optionsMask": 0, "optionsOverride": 0}
+    # ColorControl's effective ExecuteIfOff bit is (Options & ~mask) | (override
+    # & mask); 0/0 leaves it false, so a bulb that is off drops the command and
+    # comes on later at its old colour. mask=1, override=1 forces it true.
+    # moveToLevelWithOnOff needs no such override: the WithOnOff variant
+    # always executes regardless of the bulb's on/off state.
+    color_options = {"transitionTime": transition, "optionsMask": 1, "optionsOverride": 1}
     commands: list[ClusterCommand] = []
 
     if command.on is False:
@@ -162,7 +168,7 @@ def plan(
                 endpoint_id=endpoint,
                 cluster_id=COLOR_CLUSTER,
                 name="moveToColorTemperature",
-                payload={"colorTemperatureMireds": kelvin_to_mireds(kelvin), **options},
+                payload={"colorTemperatureMireds": kelvin_to_mireds(kelvin), **color_options},
             )
         )
     if command.hue is not None and command.saturation is not None:
@@ -176,7 +182,7 @@ def plan(
                 payload={
                     "hue": hue_deg_to_matter(command.hue),
                     "saturation": sat_pct_to_matter(command.saturation),
-                    **options,
+                    **color_options,
                 },
             )
         )
@@ -188,7 +194,10 @@ def plan(
                 endpoint_id=endpoint,
                 cluster_id=LEVEL_CLUSTER,
                 name="moveToLevelWithOnOff",
-                payload={"level": pct_to_level(command.brightness, minimum_on=True), **options},
+                payload={
+                    "level": pct_to_level(command.brightness, minimum_on=True),
+                    **level_options,
+                },
             )
         )
     # Power last and always explicit: a colour or level command never

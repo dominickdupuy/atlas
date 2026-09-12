@@ -60,6 +60,38 @@ async def test_level_and_colour_commands_update_their_attributes() -> None:
     assert node.attributes["1/768/0"] == 85
 
 
+async def test_colour_command_against_an_off_bulb_needs_the_options_override() -> None:
+    stub = StubMatterController()
+    await stub.send(1, 1, 6, "off", {})
+    await stub.send(
+        1,
+        1,
+        768,
+        "moveToColorTemperature",
+        {"colorTemperatureMireds": 250, "optionsMask": 0, "optionsOverride": 0},
+    )
+    node = next(n for n in await stub.nodes() if n.node_id == 1)
+    assert node.attributes["1/768/7"] != 250, "0/0 drops the command on an off bulb"
+    dropped_command = (
+        1,
+        1,
+        768,
+        "moveToColorTemperature",
+        {"colorTemperatureMireds": 250, "optionsMask": 0, "optionsOverride": 0},
+    )
+    assert dropped_command in stub.sent, "dropped commands are still recorded"
+
+    await stub.send(
+        1,
+        1,
+        768,
+        "moveToColorTemperature",
+        {"colorTemperatureMireds": 250, "optionsMask": 1, "optionsOverride": 1},
+    )
+    node = next(n for n in await stub.nodes() if n.node_id == 1)
+    assert node.attributes["1/768/7"] == 250, "1/1 forces the command through while off"
+
+
 async def test_commission_adds_a_node_and_remove_drops_it() -> None:
     stub = StubMatterController()
     node_id = await stub.commission_with_code("12345678901", network_only=True)

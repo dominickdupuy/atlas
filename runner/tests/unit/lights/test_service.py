@@ -78,6 +78,17 @@ async def test_apply_never_writes_the_cache_optimistically() -> None:
     assert service.snapshot().lights["ceiling-1"].on is False
 
 
+async def test_apply_color_temp_on_an_off_bulb_lands_the_colour_and_turns_it_on() -> None:
+    """Regression: plan() must send optionsMask/Override=1/1 on ColorControl
+    commands, or a bulb that starts off drops the colour command and comes
+    on later at its old colour (spec 4.1)."""
+    service, _, _, _ = await _service()
+    assert service.get("ceiling-1").on is False
+    state = await service.apply("ceiling-1", LightCommand(color_temp_k=2700))
+    assert state.on is True
+    assert state.color_temp_k == 2703
+
+
 async def test_toggle_flips_power() -> None:
     service, _, _, _ = await _service()
     assert (await service.toggle("ceiling-3")).on is True

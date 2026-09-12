@@ -83,6 +83,16 @@ class StubMatterController:
             if name.endswith("WithOnOff"):
                 await self.emit_attribute(node_id, f"{base}/6/0", payload["level"] > 0)
         elif cluster_id == COLOR_CLUSTER:
+            # Honour Matter's ExecuteIfOff semantics: with the bulb off, the
+            # command only takes effect if optionsOverride & optionsMask & 1.
+            # 0/0 leaves it false, matching a real bulb that drops the
+            # command silently; it is still recorded in `.sent` above.
+            is_off = self._nodes[node_id].attributes.get(f"{base}/6/0") is False
+            mask = payload.get("optionsMask", 0)
+            override = payload.get("optionsOverride", 0)
+            execute_if_off = bool(override & mask & 1)
+            if is_off and not execute_if_off:
+                return
             if name == "moveToColorTemperature":
                 color_temp = payload["colorTemperatureMireds"]
                 await self.emit_attribute(node_id, f"{base}/768/7", color_temp)

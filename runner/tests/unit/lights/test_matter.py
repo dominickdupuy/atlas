@@ -77,11 +77,16 @@ def test_plan_orders_colour_then_level_then_power_and_sends_power_explicitly() -
     assert commands[0].payload == {
         "colorTemperatureMireds": 370,
         "transitionTime": 5,
+        "optionsMask": 1,
+        "optionsOverride": 1,
+    }
+    assert commands[1].name == "moveToLevelWithOnOff"
+    assert commands[1].payload == {
+        "level": 102,
+        "transitionTime": 5,
         "optionsMask": 0,
         "optionsOverride": 0,
     }
-    assert commands[1].name == "moveToLevelWithOnOff"
-    assert commands[1].payload["level"] == 102
     assert commands[2].name == "on"
     assert commands[2].payload == {}
 
@@ -104,6 +109,8 @@ def test_plan_hue_and_saturation() -> None:
     assert commands[0].name == "moveToHueAndSaturation"
     assert commands[0].payload["hue"] == 85
     assert commands[0].payload["saturation"] == 254
+    assert commands[0].payload["optionsMask"] == 1
+    assert commands[0].payload["optionsOverride"] == 1
     assert commands[-1].name == "on", "colour without power still switches the bulb on"
 
 
