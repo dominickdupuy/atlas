@@ -97,3 +97,34 @@ def test_match_scene_is_exact_then_fuzzy_then_ambiguous() -> None:
     assert match_scene("nite", scenes) == "night"
     assert match_scene("evenin", scenes) is None, "two close matches: ambiguous"
     assert match_scene("party", scenes) is None
+
+
+def test_weak_fuzzy_scene_match_is_partial() -> None:
+    """A weak fuzzy match (ratio below 0.8) is a guess: it must not actuate
+    on its own, so it comes back as a partial apply_scene hint for tier 2."""
+    bright = parse("bright", VOCAB)
+    assert bright.intent == Intent(intent=IntentKind.APPLY_SCENE, scene="night")
+    assert bright.partial is True
+
+    nite = parse("nite", VOCAB)
+    assert nite.intent == Intent(intent=IntentKind.APPLY_SCENE, scene="night")
+    assert nite.partial is True
+
+    evenng = parse("evenng", VOCAB)
+    assert evenng.intent == Intent(intent=IntentKind.APPLY_SCENE, scene="evening")
+    assert evenng.partial is False, "ratio 0.92 is a strong match"
+
+    evening_mode = parse("evening mode", VOCAB)
+    assert evening_mode.intent == Intent(intent=IntentKind.APPLY_SCENE, scene="evening")
+    assert evening_mode.partial is False, "exact after noise stripping"
+
+
+def test_hyphenated_group_name_is_speakable() -> None:
+    """_target_aliases must dehyphenate group names the same way it does
+    light names, or a group like living-room can never be matched."""
+    registry = LightsRegistry.from_mapping(
+        {"lights": {"a": {"node_id": 1}}, "groups": {"living-room": ["a"]}}
+    )
+    vocab = Vocabulary.from_registry(registry)
+    assert parse("living room off", vocab).intent.targets == ("living-room",)
+    assert parse("living room lights off", vocab).intent.targets == ("living-room",)

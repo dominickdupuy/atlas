@@ -91,6 +91,10 @@ COLOUR_ALIASES = {"warmer": "warm", "cooler": "cool"}
 QUERY_WORDS = frozenset({"is", "are", "what", "whats"})
 SCENE_LEAD = frozenset({"scene", "activate", "run"})
 SCENE_NOISE = frozenset({"mode", "lights", "scene", "the"})
+# A fuzzy scene match below this ratio is a guess, not a command: it must
+# not actuate on its own (D26 fix round 1). At or above it, and any exact
+# match, are strong enough to stand as a complete parse.
+SCENE_STRONG_CUTOFF = 0.8
 
 
 class ParseResult(BaseModel):
@@ -133,17 +137,27 @@ def normalise(text: str) -> str:
     return " ".join(out)
 
 
-def match_scene(phrase: str, scenes: Sequence[str]) -> str | None:
+def scene_match(phrase: str, scenes: Sequence[str]) -> tuple[str, float] | None:
     """Normalise, drop noise words, exact match, then a single close fuzzy
-    match; two close matches is ambiguous and resolves to None."""
+    match; two close matches is ambiguous and resolves to None. The float is
+    the match strength (1.0 for exact) so callers can tell a strong match
+    from a guess."""
     words = [w for w in normalise(phrase).split() if w not in SCENE_NOISE]
     key = " ".join(words)
     if not key:
         return None
     if key in scenes:
-        return key
+        return key, 1.0
     close = difflib.get_close_matches(key, list(scenes), n=2, cutoff=0.6)
-    return close[0] if len(close) == 1 else None
+    if len(close) != 1:
+        return None
+    scene = close[0]
+    return scene, difflib.SequenceMatcher(None, key, scene).ratio()
+
+
+def match_scene(phrase: str, scenes: Sequence[str]) -> str | None:
+    found = scene_match(phrase, scenes)
+    return found[0] if found is not None else None
 
 
 def _target_aliases(vocabulary: Vocabulary) -> dict[str, str]:
@@ -157,8 +171,9 @@ def _target_aliases(vocabulary: Vocabulary) -> dict[str, str]:
             if digit < 10 and spoken.endswith(f" {digit}"):
                 aliases[spoken[: -len(str(digit))] + digit_word] = name
     for group in vocabulary.groups:
-        aliases[group] = group
-        aliases[f"{group} lights"] = group
+        spoken_group = group.replace("-", " ")
+        aliases[spoken_group] = group
+        aliases[f"{spoken_group} lights"] = group
     return dict(sorted(aliases.items(), key=lambda kv: -len(kv[0])))
 
 
@@ -221,9 +236,13 @@ def parse(text: str, vocabulary: Vocabulary) -> ParseResult:
         return _finish(Intent(intent=IntentKind.APPLY_SCENE, scene=rest[0]), vocabulary)
 
     if not targets and (not has_state or words[0] in SCENE_LEAD):
-        scene = match_scene(" ".join(leftover), vocabulary.scenes)
-        if scene is not None:
-            return _finish(Intent(intent=IntentKind.APPLY_SCENE, scene=scene), vocabulary)
+        found = scene_match(" ".join(leftover), vocabulary.scenes)
+        if found is not None:
+            scene, ratio = found
+            weak = ratio < SCENE_STRONG_CUTOFF
+            return _finish(
+                Intent(intent=IntentKind.APPLY_SCENE, scene=scene), vocabulary, partial=weak
+            )
 
     if is_query:
         query_targets = tuple(targets) if targets else ((ALL,) if all_word_seen else ())
