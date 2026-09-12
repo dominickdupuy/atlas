@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
-from httpx import AsyncClient
+from pathlib import Path
 
-from atlas.bootstrap.container import Application
-from tests.integration.conftest import AUTH
+from httpx import ASGITransport, AsyncClient
+
+from atlas.bootstrap.container import Application, build_application
+from atlas.config import Settings
+from atlas.presentation.http.app import create_app
+from tests.integration.conftest import AUTH, FIXTURE_JOBS
 
 
 async def test_requires_auth(client: AsyncClient) -> None:
@@ -103,3 +107,56 @@ async def test_unsupported_feature_is_409(client: AsyncClient, application: Appl
     )
     response = await client.post("/api/lights/ceiling-1", headers=AUTH, json={"brightness": 10})
     assert response.status_code == 409
+
+
+async def test_lights_not_configured_is_404_on_every_route(tmp_path: Path) -> None:
+    """`ATLAS_MATTER_WS_URL` unset means `Application.lights is None`; every
+    route must 404 rather than 500, independent of the stub fixture above."""
+    token = "not-configured-token"
+    settings = Settings(
+        _env_file=None,
+        profile="dev",
+        api_token=token,
+        db_path=tmp_path / "state.db",
+        jobs_dir=FIXTURE_JOBS,
+        tz="UTC",
+        ntfy_token="",
+        repos_registry=tmp_path / "repos.toml",
+        repos_state_dir=tmp_path / "repo-state",
+        health_board_path=tmp_path / "health-board.json",
+        matter_ws_url="",
+    )
+    application = build_application(settings)
+    await application.start_persistence()
+    assert application.lights is None
+    api = create_app(application)
+    transport = ASGITransport(app=api)
+    auth = {"Authorization": f"Bearer {token}"}
+    try:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+            expected = {"detail": "lights are not configured"}
+            get_lights = await client.get("/api/lights", headers=auth)
+            assert get_lights.status_code == 404
+            assert get_lights.json() == expected
+
+            get_scenes = await client.get("/api/lights/scenes", headers=auth)
+            assert get_scenes.status_code == 404
+            assert get_scenes.json() == expected
+
+            activate = await client.post("/api/lights/scenes/evening/activate", headers=auth)
+            assert activate.status_code == 404
+            assert activate.json() == expected
+
+            get_one = await client.get("/api/lights/ceiling-1", headers=auth)
+            assert get_one.status_code == 404
+            assert get_one.json() == expected
+
+            post_one = await client.post("/api/lights/ceiling-1", headers=auth, json={"on": True})
+            assert post_one.status_code == 404
+            assert post_one.json() == expected
+
+            toggle = await client.post("/api/lights/ceiling-1/toggle", headers=auth)
+            assert toggle.status_code == 404
+            assert toggle.json() == expected
+    finally:
+        await application.db.close()
