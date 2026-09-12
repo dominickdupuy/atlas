@@ -125,6 +125,7 @@ def test_an_existing_checkout_is_pulled_without_touching_root(
 
     monkeypatch.setattr(module, "sudo", lambda *a: pytest.fail("no sudo for a pull"))
     calls: list[list[str]] = []
+
     def fake_run_pull(cmd: list[str], **kw: object) -> subprocess.CompletedProcess[bytes]:
         calls.append(cmd)
         return subprocess.CompletedProcess(cmd, 0)
