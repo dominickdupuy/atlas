@@ -1,0 +1,19 @@
+lights:
+  ceiling-1: { node_id: 1, endpoint_id: 1 }
+  ceiling-2: { node_id: 2, endpoint_id: 1 }
+  ceiling-3: { node_id: 3, endpoint_id: 1 }
+  ceiling-4: { node_id: 4, endpoint_id: 1 }
+
+groups:
+  bedroom: [ceiling-1, ceiling-2, ceiling-3, ceiling-4]
+
+scenes:
+  evening:
+    bedroom: { brightness: 40, color_temp_k: 2700 }
+  night:
+    ceiling-1: { brightness: 5, color_temp_k: 2200 }
+    ceiling-2: { "on": false }
+    ceiling-3: { "on": false }
+    ceiling-4: { "on": false }
+  "off":
+    bedroom: { "on": false }
