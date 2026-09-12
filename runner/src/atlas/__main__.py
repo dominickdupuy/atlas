@@ -76,7 +76,7 @@ def _lights(args: argparse.Namespace) -> int:
     from atlas.config import Settings
     from atlas.lights.application import commissioning
     from atlas.lights.application.ports import ControllerUnavailable, MatterController, MatterError
-    from atlas.lights.application.registry import LightsRegistry
+    from atlas.lights.application.registry import LightsRegistry, RegistryError
 
     settings = Settings()
     if not settings.matter_ws_url or settings.matter_ws_url == "stub":
@@ -84,6 +84,12 @@ def _lights(args: argparse.Namespace) -> int:
             "ATLAS_MATTER_WS_URL must point at the controller (ws://127.0.0.1:5580/ws)",
             file=sys.stderr,
         )
+        return 2
+
+    # Checked before ever opening a connection: no point waiting on the
+    # controller for a removal the operator hasn't confirmed.
+    if args.lights_command == "remove" and not args.yes:
+        print("refusing without --yes", file=sys.stderr)
         return 2
 
     async def action(controller: MatterController) -> int:
@@ -103,16 +109,13 @@ def _lights(args: argparse.Namespace) -> int:
                 await commissioning.identify(controller, args.node_id, seconds=args.seconds)
                 print(f"node {args.node_id} identifying for {args.seconds}s")
             case "remove":
-                if not args.yes:
-                    print("refusing without --yes", file=sys.stderr)
-                    return 2
                 await commissioning.remove(controller, args.node_id)
                 print(f"removed node {args.node_id}")
         return 0
 
     try:
         return asyncio.run(commissioning.with_controller(settings.matter_ws_url, action))
-    except (ControllerUnavailable, MatterError) as exc:
+    except (ControllerUnavailable, MatterError, RegistryError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
