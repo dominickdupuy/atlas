@@ -65,8 +65,12 @@ async def with_controller[T](
     action: Callable[[MatterController], Awaitable[T]],
     *,
     timeout: float = 15.0,  # noqa: ASYNC109 - a CLI wait budget, not a per-request timeout
+    request_timeout: float = 10.0,
+    commission_timeout: float = 180.0,
 ) -> T:
-    client = MatterWsClient(url)
+    client = MatterWsClient(
+        url, request_timeout=request_timeout, commission_timeout=commission_timeout
+    )
     task = asyncio.create_task(client.run(), name="matter-cli")
     try:
         try:

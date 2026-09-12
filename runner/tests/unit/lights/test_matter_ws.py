@@ -51,6 +51,9 @@ class FakeSocket:
         # Commands recorded in `sent` but never answered: a reply that never
         # arrives, simulating a request left pending at disconnect.
         self.silence: set[str] = set()
+        # Commands whose reply is delayed by this many seconds before being
+        # queued, simulating a slow controller (e.g. real commissioning).
+        self.delays: dict[str, float] = {}
         self.inbound.put_nowait(json.dumps(server_info))
         self.closed = asyncio.Event()
 
@@ -65,6 +68,9 @@ class FakeSocket:
             reply = {"message_id": request["message_id"], "error_code": code, "details": details}
         else:
             reply = {"message_id": request["message_id"], "result": self.replies.get(command)}
+        delay = self.delays.get(command)
+        if delay:
+            await asyncio.sleep(delay)
         await self.inbound.put(json.dumps(reply))
 
     async def recv(self) -> str:
@@ -104,7 +110,7 @@ class Recorder:
         self.attributes.append((node_id, path, value))
 
 
-def _client(sockets: list[FakeSocket], sleeps: list[float]) -> MatterWsClient:
+def _client(sockets: list[FakeSocket], sleeps: list[float], **kwargs: Any) -> MatterWsClient:
     remaining = list(sockets)
 
     @asynccontextmanager
@@ -123,6 +129,7 @@ def _client(sockets: list[FakeSocket], sleeps: list[float]) -> MatterWsClient:
         connect=connect,
         sleep=sleep,
         backoff=ReconnectBackoff(initial=1.0, jitter=lambda: 1.0),
+        **kwargs,
     )
 
 
@@ -229,6 +236,22 @@ async def test_events_are_dispatched() -> None:
         await task
 
 
+async def test_node_removed_accepts_a_bare_int_or_a_dict() -> None:
+    socket = FakeSocket()
+    recorder = Recorder()
+    client = _client([socket], [])
+    client.subscribe(recorder)
+    task = asyncio.create_task(client.run())
+    await _settle()
+    await socket.push_event("node_removed", 1)
+    await socket.push_event("node_removed", {"node_id": 2})
+    await _settle()
+    assert recorder.removed == [1, 2]
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
 async def test_disconnect_fails_pending_and_new_requests_then_reconnects() -> None:
     first, second = FakeSocket(), FakeSocket()
     recorder = Recorder()
@@ -295,6 +318,40 @@ async def test_pending_request_fails_when_the_socket_disconnects() -> None:
     with pytest.raises(ControllerUnavailable):
         await pending
     assert client.connected, "reconnects into the second socket"
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+async def test_commission_outlives_the_default_request_timeout() -> None:
+    """Real commissioning (network join plus interview) takes 30-120s, far
+    longer than the default per-request timeout used for ordinary reads and
+    writes. commission_with_code must wait on its own, longer,
+    commission_timeout rather than the request_timeout."""
+    socket = FakeSocket()
+    socket.replies["commission_with_code"] = {**NODE, "node_id": 9}
+    socket.delays["commission_with_code"] = 0.05
+    client = _client([socket], [], request_timeout=0.01, commission_timeout=1.0)
+    task = asyncio.create_task(client.run())
+    await _settle()
+    assert await client.commission_with_code("12345678901", network_only=True) == 9
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+async def test_read_logs_a_warning_on_an_unexpected_reply_shape(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    socket = FakeSocket()
+    socket.replies["read_attribute"] = [1, 2, 3]
+    client = _client([socket], [])
+    task = asyncio.create_task(client.run())
+    await _settle()
+    with caplog.at_level("WARNING"):
+        result = await client.read(1, "1/*/*")
+    assert result == {}
+    assert any("read_attribute" in record.getMessage() for record in caplog.records)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task

@@ -89,12 +89,16 @@ class MatterWsClient:
         sleep: Sleeper = asyncio.sleep,
         backoff: ReconnectBackoff | None = None,
         request_timeout: float = 10.0,
+        commission_timeout: float = 180.0,
+        bootstrap_timeout: float = 60.0,
     ) -> None:
         self._url = url
         self._connect: ConnectFactory = connect or _websockets_connect
         self._sleep = sleep
         self._backoff = backoff or ReconnectBackoff()
         self._request_timeout = request_timeout
+        self._commission_timeout = commission_timeout
+        self._bootstrap_timeout = bootstrap_timeout
         self._socket: MatterSocket | None = None
         self._pending: dict[str, asyncio.Future[Any]] = {}
         self._listeners: list[ControllerListener] = []
@@ -119,7 +123,15 @@ class MatterWsClient:
         result = await self._request(
             "read_attribute", {"node_id": node_id, "attribute_path": attribute_path}
         )
-        return dict(result) if isinstance(result, dict) else {}
+        if not isinstance(result, dict):
+            logger.warning(
+                "read_attribute %s/%s returned %s, expected a path->value dict",
+                node_id,
+                attribute_path,
+                type(result).__name__,
+            )
+            return {}
+        return dict(result)
 
     async def send(
         self, node_id: int, endpoint_id: int, cluster_id: int, name: str, payload: dict[str, int]
@@ -137,7 +149,9 @@ class MatterWsClient:
 
     async def commission_with_code(self, code: str, *, network_only: bool) -> int:
         result = await self._request(
-            "commission_with_code", {"code": code, "network_only": network_only}
+            "commission_with_code",
+            {"code": code, "network_only": network_only},
+            timeout=self._commission_timeout,
         )
         if not isinstance(result, dict) or "node_id" not in result:
             raise MatterError(0, f"unexpected commission reply: {result!r}")
@@ -146,11 +160,12 @@ class MatterWsClient:
         return node.node_id
 
     async def remove_node(self, node_id: int) -> None:
-        await self._request("remove_node", {"node_id": node_id})
+        await self._request("remove_node", {"node_id": node_id}, timeout=self._commission_timeout)
 
     async def server_info(self) -> ServerInfo:
-        # The cached value survives a disconnect (a reconnect compares
-        # against it), but it must never be handed out while disconnected.
+        # Cached so callers can read the last handshake while connected;
+        # nothing compares it against a later reconnect. It must never be
+        # handed out while disconnected.
         if self._socket is None or self._server_info is None:
             raise ControllerUnavailable("not connected")
         return self._server_info
@@ -218,7 +233,7 @@ class MatterWsClient:
         await socket.send(
             json.dumps({"message_id": message_id, "command": "start_listening", "args": {}})
         )
-        async with asyncio.timeout(self._request_timeout):
+        async with asyncio.timeout(self._bootstrap_timeout):
             while not future.done():
                 await self._dispatch(json.loads(await socket.recv()))
             return future.result()
@@ -235,6 +250,10 @@ class MatterWsClient:
                 await listener.on_disconnected()
 
     async def _dispatch(self, message: dict[str, Any]) -> None:
+        # Invariant: a listener callback must never call back into this
+        # controller (send/read/commission_with_code/...). The reply to any
+        # such call could only be delivered by this same loop, on this same
+        # task, so a callback that awaited one would deadlock.
         if "message_id" in message:
             future = self._pending.pop(str(message["message_id"]), None)
             if future is None or future.done():
@@ -254,7 +273,9 @@ class MatterWsClient:
             for listener in self._listeners:
                 await listener.on_node(node)
         elif event == "node_removed":
-            node_id = int(data)  # type: ignore[arg-type]
+            # Accept either a bare node ID or {"node_id": n}; the observed
+            # server shape is unconfirmed for this event.
+            node_id = int(data["node_id"]) if isinstance(data, dict) else int(data)  # type: ignore[arg-type]
             self._nodes.pop(node_id, None)
             for listener in self._listeners:
                 await listener.on_node_removed(node_id)
@@ -274,20 +295,28 @@ class MatterWsClient:
         if self._socket is None:
             raise ControllerUnavailable("not connected to the matter controller")
 
-    async def _request(self, command: str, args: dict[str, Any]) -> Any:
+    async def _request(
+        self,
+        command: str,
+        args: dict[str, Any],
+        *,
+        timeout: float | None = None,  # noqa: ASYNC109 - overrides self._request_timeout, not a bare wait
+    ) -> Any:
         self._require_connected()
         assert self._socket is not None
         message_id = uuid.uuid4().hex
         future: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
         self._pending[message_id] = future
+        # Serialised as-is via json.dumps: node IDs are plain Python ints, and
+        # matter.js models NodeId as a BigInt. If the server ever wants node
+        # IDs sent as strings instead, this is the single point to adapt.
         await self._socket.send(
             json.dumps({"message_id": message_id, "command": command, "args": args})
         )
+        effective_timeout = self._request_timeout if timeout is None else timeout
         try:
-            async with asyncio.timeout(self._request_timeout):
+            async with asyncio.timeout(effective_timeout):
                 return await future
         except TimeoutError as exc:
             self._pending.pop(message_id, None)
-            raise ControllerUnavailable(
-                f"{command}: no reply in {self._request_timeout:.0f}s"
-            ) from exc
+            raise ControllerUnavailable(f"{command}: no reply in {effective_timeout:.0f}s") from exc
