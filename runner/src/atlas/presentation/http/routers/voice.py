@@ -27,7 +27,7 @@ async def voice(
     body: VoiceBody,
     application: Annotated[Application, Depends(get_application)],
 ) -> JSONResponse:
-    service = getattr(application, "voice", None)
+    service = application.voice
     if service is None:
         return JSONResponse(
             {"speech": f"Heard: {body.text}", "intent": None, "tier": 0, "result": None}

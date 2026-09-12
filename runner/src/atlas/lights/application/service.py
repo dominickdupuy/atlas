@@ -127,6 +127,10 @@ class LightsService:
         self._connected = False
         self._fetched_at: datetime | None = None
 
+    @property
+    def registry(self) -> LightsRegistry:
+        return self._registry
+
     # --- lifecycle -----------------------------------------------------
 
     async def start(self) -> None:

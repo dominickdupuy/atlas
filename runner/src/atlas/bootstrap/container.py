@@ -19,6 +19,7 @@ from atlas.approvals.infrastructure.payload_executor import (
 from atlas.approvals.infrastructure.sqlite_repo import SqliteApprovalRepository
 from atlas.bootstrap.connectors_factory import build_connectors, build_notifier, gateway_for
 from atlas.bootstrap.lights_factory import build_lights, matter_probe
+from atlas.bootstrap.voice_factory import build_voice
 from atlas.budget.application.service import BudgetService
 from atlas.budget.domain.ledger import usd
 from atlas.budget.infrastructure.pricing import StaticPricingTable
@@ -35,6 +36,7 @@ from atlas.jobs.infrastructure.sqlite_run_repo import SqliteJobRunRepository
 from atlas.jobs.infrastructure.subprocess_launcher import SubprocessJobLauncher
 from atlas.jobs.infrastructure.yaml_source import YamlJobDefinitionSource
 from atlas.lights.application.service import LightsService
+from atlas.lights.application.tools import LightsTools
 from atlas.lights.infrastructure.matter_ws import MatterWsClient
 from atlas.persistence.db import Database
 from atlas.shared.build_info import git_revision, package_version
@@ -49,6 +51,7 @@ from atlas.telemetry.infrastructure.hosted_repos import HostedRepoReader
 from atlas.telemetry.infrastructure.mqtt_bus import AiomqttEventBus
 from atlas.telemetry.infrastructure.service_probes import TcpServiceProbe
 from atlas.telemetry.infrastructure.system_metrics import SystemMetricsReader
+from atlas.voice.application.service import VoiceService
 
 
 @dataclass
@@ -79,6 +82,7 @@ class Application:
     health_board: HealthBoardReader
     lights: LightsService | None
     matter: MatterWsClient | None
+    voice: VoiceService | None
     started_at: datetime
     version: str
     revision: str
@@ -106,12 +110,15 @@ def build_application(settings: Settings) -> Application:
     approval_repo = SqliteApprovalRepository(db)
     ledger_repo = SqliteBudgetLedgerRepository(db)
 
+    lights, matter = build_lights(settings, bus, clock)
+    lights_tools = LightsTools(lights) if lights else None
+
     payload_executor = ToolGatewayPayloadExecutor(
         lookup=catalog.get,
-        gateway_factory=lambda definition: gateway_for(definition, connectors),
+        gateway_factory=lambda definition: gateway_for(definition, connectors, lights=lights_tools),
     )
     write_executor = DirectWriteExecutor(
-        gateway_factory=lambda definition: gateway_for(definition, connectors)
+        gateway_factory=lambda definition: gateway_for(definition, connectors, lights=lights_tools)
     )
 
     # Budget needs to pause the scheduler; the scheduler needs the execute
@@ -179,7 +186,9 @@ def build_application(settings: Settings) -> Application:
         else None
     )
 
-    lights, matter = build_lights(settings, bus, clock)
+    voice = build_voice(
+        settings, lights=lights, connectors=connectors, budget=budget, db=db, clock=clock
+    )
 
     probe_list = [
         TcpServiceProbe("homeassistant", settings.homeassistant_host, settings.homeassistant_port),
@@ -226,6 +235,7 @@ def build_application(settings: Settings) -> Application:
         health_board=HealthBoardReader(settings.health_board_path, settings.tz),
         lights=lights,
         matter=matter,
+        voice=voice,
         started_at=clock.now(),
         version=package_version(),
         revision=git_revision(),

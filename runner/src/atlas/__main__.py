@@ -120,6 +120,28 @@ def _lights(args: argparse.Namespace) -> int:
         return 1
 
 
+def _voice_log(tier: int | None, limit: int) -> int:
+    from atlas.config import Settings
+    from atlas.persistence.db import Database
+    from atlas.voice.infrastructure.sqlite_log import SqliteUtteranceLog
+
+    async def run() -> int:
+        db = Database(Settings().db_path)
+        await db.connect()
+        try:
+            for record in await SqliteUtteranceLog(db).recent(limit=limit, tier=tier):
+                print(
+                    f"{record.heard_at.isoformat()} | t{record.tier} | {record.model or '-'} | "
+                    f"{record.outcome} | {record.text!r} | "
+                    f"{record.intent.model_dump_json(exclude_none=True)}"
+                )
+        finally:
+            await db.close()
+        return 0
+
+    return asyncio.run(run())
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="atlas")
     subcommands = parser.add_subparsers(dest="command", required=True)
@@ -145,6 +167,12 @@ def main() -> None:
     remove_p.add_argument("node_id", type=int)
     remove_p.add_argument("--yes", action="store_true")
 
+    voice = subcommands.add_parser("voice", help="voice front-end operations")
+    voice_sub = voice.add_subparsers(dest="voice_command", required=True)
+    log_p = voice_sub.add_parser("log", help="recent utterances, newest first")
+    log_p.add_argument("--tier", type=int, choices=(1, 2))
+    log_p.add_argument("--limit", type=int, default=50)
+
     args = parser.parse_args()
     _configure_logging()
 
@@ -161,6 +189,8 @@ def main() -> None:
             sys.exit(_migrate(args.status))
         case "lights":
             sys.exit(_lights(args))
+        case "voice":
+            sys.exit(_voice_log(args.tier, args.limit))
 
 
 if __name__ == "__main__":
