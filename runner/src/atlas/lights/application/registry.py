@@ -56,13 +56,29 @@ class LightsRegistry:
 
     @classmethod
     def from_mapping(cls, raw: Mapping[str, object]) -> LightsRegistry:
-        lights = cls._lights(raw.get("lights") or {})
-        groups = cls._groups(raw.get("groups") or {}, lights)
-        scenes = cls._scenes(raw.get("scenes") or {}, lights, groups)
+        lights_section = raw.get("lights")
+        lights = cls._lights(lights_section if lights_section is not None else {})
+
+        groups_section = raw.get("groups")
+        groups = cls._groups(groups_section if groups_section is not None else {}, lights)
+
+        scenes_section = raw.get("scenes")
+        scenes = cls._scenes(scenes_section if scenes_section is not None else {}, lights, groups)
+
         return cls(lights, groups, scenes)
 
     @staticmethod
-    def _lights(section: object) -> dict[str, Light]:
+    def _key(k: object) -> str:
+        """Normalize boolean keys to 'on'/'off' (from bare YAML); otherwise stringify."""
+        if k is True:
+            return "on"
+        elif k is False:
+            return "off"
+        else:
+            return str(k)
+
+    @classmethod
+    def _lights(cls, section: object) -> dict[str, Light]:
         if not isinstance(section, Mapping):
             raise RegistryError("'lights' must be a mapping of name -> {node_id, endpoint_id}")
         lights: dict[str, Light] = {}
@@ -71,7 +87,7 @@ class LightsRegistry:
             if not isinstance(spec, Mapping):
                 raise RegistryError(f"light {name!r} must be a mapping")
             try:
-                light = Light(name=str(name), **{str(k): v for k, v in spec.items()})
+                light = Light(name=cls._key(name), **{cls._key(k): v for k, v in spec.items()})
             except ValidationError as exc:
                 raise RegistryError(f"light {name!r}: {exc}") from exc
             if light.node_id in seen_nodes:
@@ -83,13 +99,13 @@ class LightsRegistry:
             lights[light.name] = light
         return lights
 
-    @staticmethod
-    def _groups(section: object, lights: Mapping[str, Light]) -> dict[str, tuple[str, ...]]:
+    @classmethod
+    def _groups(cls, section: object, lights: Mapping[str, Light]) -> dict[str, tuple[str, ...]]:
         if not isinstance(section, Mapping):
             raise RegistryError("'groups' must be a mapping of name -> [light names]")
         groups: dict[str, tuple[str, ...]] = {}
         for name, members in section.items():
-            key = str(name)
+            key = cls._key(name)
             if key == ALL or key in lights:
                 raise RegistryError(f"group {key!r} shadows a light name or {ALL!r}")
             if not isinstance(members, list) or not members:
@@ -97,7 +113,7 @@ class LightsRegistry:
             for member in members:
                 if member not in lights:
                     raise RegistryError(f"group {key!r} names unknown light {member!r}")
-            groups[key] = tuple(str(m) for m in members)
+            groups[key] = tuple(cls._key(m) for m in members)
         return groups
 
     @classmethod
@@ -108,12 +124,12 @@ class LightsRegistry:
             raise RegistryError("'scenes' must be a mapping of name -> {target: command}")
         scenes: dict[str, Scene] = {}
         for name, targets in section.items():
-            key = str(name)
+            key = cls._key(name)
             if not isinstance(targets, Mapping):
                 raise RegistryError(f"scene {key!r} must be a mapping of target -> command")
             states: dict[str, LightCommand] = {}
             for target, spec in targets.items():
-                target_key = str(target)
+                target_key = cls._key(target)
                 if target_key == ALL:
                     members: tuple[str, ...] = tuple(lights)
                 elif target_key in groups:
@@ -125,7 +141,7 @@ class LightsRegistry:
                 if not isinstance(spec, Mapping):
                     raise RegistryError(f"scene {key!r} target {target_key!r} must be a mapping")
                 try:
-                    command = LightCommand(**{str(k): v for k, v in spec.items()})
+                    command = LightCommand(**{cls._key(k): v for k, v in spec.items()})
                 except ValidationError as exc:
                     raise RegistryError(f"scene {key!r} target {target_key!r}: {exc}") from exc
                 for member in members:

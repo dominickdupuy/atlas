@@ -84,3 +84,32 @@ def test_empty_registry_is_allowed(tmp_path: Path) -> None:
     registry = LightsRegistry.load(path)
     assert registry.lights == {}
     assert registry.resolve("all") == []
+
+
+def test_wrong_type_lights_section_raises() -> None:
+    raw: dict[str, object] = {"lights": []}
+    with pytest.raises(RegistryError, match="'lights'"):
+        LightsRegistry.from_mapping(raw)
+
+
+def test_wrong_type_scenes_section_raises() -> None:
+    raw: dict[str, object] = {"lights": {"a": {"node_id": 1}}, "scenes": 0}
+    with pytest.raises(RegistryError, match="'scenes'"):
+        LightsRegistry.from_mapping(raw)
+
+
+def test_null_groups_section_loads_as_empty() -> None:
+    raw: dict[str, object] = {"lights": {"a": {"node_id": 1}}, "groups": None}
+    registry = LightsRegistry.from_mapping(raw)
+    assert registry.groups == {}
+
+
+def test_bare_boolean_keys_normalize_to_on_off() -> None:
+    raw: dict[str, object] = {
+        "lights": {"a": {"node_id": 1}},
+        "scenes": {True: {"a": {True: True}}, False: {"a": {True: False}}},
+    }
+    registry = LightsRegistry.from_mapping(raw)
+    assert set(registry.scenes) == {"on", "off"}
+    assert registry.scenes["on"].states["a"].on is True
+    assert registry.scenes["off"].states["a"].on is False
