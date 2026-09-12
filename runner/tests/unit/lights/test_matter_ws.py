@@ -48,6 +48,9 @@ class FakeSocket:
         self.sent: list[dict[str, Any]] = []
         self.replies: dict[str, Any] = {"start_listening": [NODE]}
         self.errors: dict[str, tuple[int, str]] = {}
+        # Commands recorded in `sent` but never answered: a reply that never
+        # arrives, simulating a request left pending at disconnect.
+        self.silence: set[str] = set()
         self.inbound.put_nowait(json.dumps(server_info))
         self.closed = asyncio.Event()
 
@@ -55,6 +58,8 @@ class FakeSocket:
         request = json.loads(message)
         self.sent.append(request)
         command = request["command"]
+        if command in self.silence:
+            return
         if command in self.errors:
             code, details = self.errors[command]
             reply = {"message_id": request["message_id"], "error_code": code, "details": details}
@@ -142,15 +147,40 @@ async def test_handshake_start_listening_and_connected_callback() -> None:
         await task
 
 
+def _bad_schema_socket() -> FakeSocket:
+    return FakeSocket({**SERVER_INFO, "schema_version": 14, "min_supported_schema_version": 14})
+
+
 async def test_schema_outside_the_window_is_refused_and_backs_off() -> None:
-    socket = FakeSocket({**SERVER_INFO, "schema_version": 14, "min_supported_schema_version": 14})
+    # A fresh socket per attempt: each represents a distinct TCP connection
+    # to the same still-unupgraded server, each with its own server_info.
+    sockets = [_bad_schema_socket(), _bad_schema_socket(), _bad_schema_socket()]
     sleeps: list[float] = []
-    client = _client([socket, socket, socket], sleeps)
+    client = _client(sockets, sleeps)
     with pytest.raises(asyncio.CancelledError):
         await client.run()
     assert not client.connected
-    assert socket.sent == [], "never sends start_listening to an unknown schema"
+    assert all(s.sent == [] for s in sockets), "never sends start_listening to an unknown schema"
     assert sleeps == [1.0, 2.0, 4.0]
+
+
+async def test_schema_mismatch_recovers_after_an_upgrade() -> None:
+    """A schema mismatch is refused, not fatal: once the controller is
+    upgraded (or a proxy in front of it starts reporting a good schema),
+    the client picks it up on the very next scheduled reconnect."""
+    sockets = [_bad_schema_socket(), _bad_schema_socket(), FakeSocket()]
+    sleeps: list[float] = []
+    recorder = Recorder()
+    client = _client(sockets, sleeps)
+    client.subscribe(recorder)
+    task = asyncio.create_task(client.run())
+    await _settle()
+    assert sleeps == [1.0, 2.0]
+    assert client.connected
+    assert len(recorder.connected) == 1
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
 
 
 async def test_schema_mismatch_is_a_named_error() -> None:
@@ -225,6 +255,49 @@ async def test_requests_while_disconnected_fail_fast() -> None:
         await client.send(1, 1, 6, "on", {})
     with pytest.raises(ControllerUnavailable):
         await client.nodes()
+
+
+async def test_server_info_is_unavailable_while_disconnected() -> None:
+    # Only one socket: once it closes, reconnect attempts exhaust the
+    # fixture and the run() task ends on its own via the sleep-cap, all
+    # synchronously — no hang, and a deterministic disconnected window to
+    # assert against.
+    socket = FakeSocket()
+    client = _client([socket], [])
+    task = asyncio.create_task(client.run())
+    await _settle()
+    info = await client.server_info()
+    assert info.schema_version == 13
+    socket.close()
+    await _settle()
+    with pytest.raises(ControllerUnavailable):
+        await client.server_info()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+async def test_pending_request_fails_when_the_socket_disconnects() -> None:
+    first, second = FakeSocket(), FakeSocket()
+    first.silence.add("device_command")
+    client = _client([first, second], [])
+    task = asyncio.create_task(client.run())
+    await _settle()
+
+    async def _send() -> None:
+        await client.send(1, 1, 6, "on", {})
+
+    pending = asyncio.create_task(_send())
+    await _settle()
+    assert first.sent[-1]["command"] == "device_command"
+    first.close()
+    await _settle()
+    with pytest.raises(ControllerUnavailable):
+        await pending
+    assert client.connected, "reconnects into the second socket"
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
 
 
 async def test_commission_returns_the_node_id_and_read_returns_attributes() -> None:

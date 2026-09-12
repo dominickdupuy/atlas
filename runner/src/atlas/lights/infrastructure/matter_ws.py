@@ -100,6 +100,7 @@ class MatterWsClient:
         self._listeners: list[ControllerListener] = []
         self._nodes: dict[int, MatterNode] = {}
         self._server_info: ServerInfo | None = None
+        self._last_schema_mismatch: int | None = None
 
     # --- MatterController ----------------------------------------------------
 
@@ -148,7 +149,9 @@ class MatterWsClient:
         await self._request("remove_node", {"node_id": node_id})
 
     async def server_info(self) -> ServerInfo:
-        if self._server_info is None:
+        # The cached value survives a disconnect (a reconnect compares
+        # against it), but it must never be handed out while disconnected.
+        if self._socket is None or self._server_info is None:
             raise ControllerUnavailable("not connected")
         return self._server_info
 
@@ -160,13 +163,16 @@ class MatterWsClient:
                 async with self._connect(self._url) as socket:
                     await self._session(socket)
             except SchemaMismatch as exc:
-                logger.error("%s; refusing to operate", exc)
-                await self._teardown()
-                # A schema mismatch is a software incompatibility, not a
-                # transient fault: reconnecting sees the same server_info
-                # every time. Back off forever without retrying the
-                # connection; only a restart (after an upgrade) tries again.
-                await self._back_off_forever()
+                # A schema mismatch is refused, not fatal: the controller
+                # may be upgraded without a runner restart, so we keep
+                # retrying on the ordinary backoff. Only log at error level
+                # once per mismatched version, so a stuck controller does
+                # not spam the log on every retry.
+                if exc.version != self._last_schema_mismatch:
+                    logger.error("%s; refusing to operate", exc)
+                    self._last_schema_mismatch = exc.version
+                else:
+                    logger.debug("%s; still refusing to operate", exc)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -175,12 +181,6 @@ class MatterWsClient:
                 await self._teardown()
             delay = self._backoff.next_delay()
             logger.info("matter controller retry %d in %.1fs", self._backoff.attempts, delay)
-            await self._sleep(delay)
-
-    async def _back_off_forever(self) -> None:
-        while True:
-            delay = self._backoff.next_delay()
-            logger.info("matter controller schema refused; next check in %.1fs", delay)
             await self._sleep(delay)
 
     async def _session(self, socket: MatterSocket) -> None:
@@ -195,6 +195,7 @@ class MatterWsClient:
         )
         self._socket = socket
         self._backoff.reset()
+        self._last_schema_mismatch = None
         logger.info("connected to matter controller %s (schema %d)", self._url, version)
 
         nodes = await self._bootstrap_listen(socket)
