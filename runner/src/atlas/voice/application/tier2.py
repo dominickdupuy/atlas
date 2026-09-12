@@ -95,9 +95,21 @@ class LlmIntentParser:
 
 
 def _strip_fence(text: str) -> str:
+    """Strip a surrounding ```json fence, whether it spans multiple lines or
+    the whole reply is on a single line (e.g. "```{...}```" with no newline
+    inside the fence at all)."""
     stripped = text.strip()
-    if stripped.startswith("```"):
-        stripped = stripped.split("\n", 1)[1] if "\n" in stripped else ""
-        if stripped.endswith("```"):
-            stripped = stripped[:-3]
-    return stripped.strip()
+    if not stripped.startswith("```"):
+        return stripped
+    body = stripped[3:]
+    if "\n" in body:
+        # A multi-line fence: the opening line is the fence marker plus an
+        # optional language tag ("json"); discard it whole.
+        _, body = body.split("\n", 1)
+    elif body.lower().startswith("json"):
+        # A single-line fence with a language tag and no newline anywhere:
+        # only the tag separates the fence from the payload.
+        body = body[len("json") :].lstrip()
+    if body.endswith("```"):
+        body = body[:-3]
+    return body.strip()

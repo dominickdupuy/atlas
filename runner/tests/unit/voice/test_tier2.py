@@ -47,6 +47,20 @@ async def test_fenced_json_is_accepted() -> None:
     parser, _ = _parser('```json\n{"intent": "apply_scene", "scene": "night"}\n```')
     outcome = await parser.parse("bedtime", VOCAB, hint=None)
     assert outcome.intent.scene == "night"
+    assert outcome.usage == USAGE
+    assert outcome.reason is None
+
+
+async def test_single_line_fenced_json_with_language_tag_is_accepted() -> None:
+    parser, _ = _parser('```json {"intent": "apply_scene", "scene": "night"}```')
+    outcome = await parser.parse("bedtime", VOCAB, hint=None)
+    assert outcome.intent.scene == "night"
+
+
+async def test_single_line_bare_fenced_json_is_accepted() -> None:
+    parser, _ = _parser('```{"intent": "apply_scene", "scene": "night"}```')
+    outcome = await parser.parse("bedtime", VOCAB, hint=None)
+    assert outcome.intent.scene == "night"
 
 
 async def test_invalid_replies_are_unknown_with_usage_still_counted() -> None:
