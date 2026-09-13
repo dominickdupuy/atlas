@@ -622,3 +622,43 @@ held for the repository owner to run by hand; only the registry entries and
 documentation (Steps 3-4) landed here. `scripts/repos.py validate` was run
 locally against the edited `infra/repos.toml` (registry parse only, no host
 access) and reports all three repos, including the two new ones, ok.
+
+## 2026-09-12 21:10 — Lights commissioned on atlas; voice answered over HTTPS
+
+Branch `worktree-lights` at ade5925, deployed by hand to `/opt/atlas` (rsync
+from `~/atlas-deploy`, `uv sync --frozen`, `systemctl restart atlas`).
+Controller: `ghcr.io/matter-js/matterjs-server:1.4.0` (matter.js 0.17.9),
+schema 13 with floor 11, loopback only on 5580, controller node id 112233.
+
+Four Lightinginside E12 RGBCW bulbs commissioned network-only from Apple
+Home pairing codes, about 3 s each, no failures. Node IDs came out 1 to 4 in
+order, so `lights.yaml`'s placeholders were already right and it is
+unchanged. The bulbs identify as vendor "Smart Home", product "Smart
+lightbulb", firmware 1.1.0-561.
+
+Hardware facts the suite could not know:
+
+- Node IDs arrive as JSON numbers and the server accepts numbers outbound;
+  no adaptation in `matter_ws.py` needed.
+- Wildcard read `1/*/*` returns a path-to-value dict, 190 paths per bulb.
+- ColorControl feature map is 25 (HS, XY, CT); colour temperature range is
+  142 to 455 mireds (about 7040 K to 2200 K). Every constant in
+  `lights/domain/matter.py` matched the bulb; nothing corrected.
+- A write is confirmed by `attribute_updated` well inside 200 ms. Full
+  HTTPS round trips through `tailscale serve`, confirmation included, took
+  0.17 to 0.35 s. `confirm_timeout=1.0` with `transition_ms=500` is safe.
+- Every write published `atlas/lights/<name>/changed` (56 messages during
+  the route tests). The Apple Home cross-fabric flip is still to be watched.
+
+Voice over HTTPS: "lights off", "ceiling one on", "bedroom to 30 percent
+warm", "evening mode", "is ceiling one on" all tier 1 with the expected
+speech and no failures, 0.04 to 0.44 s. "make it cosy" went to tier 2, which
+on the live dev profile is the stub, so it answered "Didn't catch that." and
+logged model `stub`. Tier 2 for real needs `ATLAS_PROFILE=prod`,
+`ANTHROPIC_API_KEY` and `ATLAS_MODEL_INTENT` in `/etc/atlas/atlas.env`;
+that moves the jobs onto real connectors too, so it is the owner's call.
+
+Also on the host: `/opt/atlas` carried about 460 lines of uncommitted board
+edits. They are saved as `~/opt-atlas-live-edits-2026-09-12.patch` and were
+reapplied after the rsync. The release deploy timer hard-resets the checkout,
+so they must be committed before `release` moves.
