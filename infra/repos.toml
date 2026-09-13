@@ -28,10 +28,15 @@ path = "/opt/finance"
 url = "git@github-finance:dominickdupuy/finances.git"
 branch = "master"
 kind = "job"
-# 08:30 every day. The cloud container syncs at 08:00 and uploads the day's
-# backup right after; this pulls that backup, classifies the queue with
-# Claude, applies the decisions to the container, and commits new rules.
-schedule = "30 8 * * *"
+# 05:30 every day, in the same morning slot as health-nightly. This pulls the
+# cloud container's backup, classifies the queue with Claude, applies the
+# decisions to the container, and commits new rules.
+#
+# Note the lag this time buys: the container syncs at 08:00 and uploads the
+# day's backup right after, so a 05:30 run always finds yesterday's backup and
+# works a queue that is one day behind. That is the accepted cost of one
+# morning slot. Restore "30 8 * * *" to classify the same morning's backup.
+schedule = "30 5 * * *"
 job = "FINTRACK_ENV_FILE=/home/domdd/finance.env .venv/bin/python -m fintrack.autoreview"
 setup = "python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt"
 setup_marker = ".venv/bin/python"
@@ -39,27 +44,22 @@ timeout_seconds = 1500
 
 [[repo]]
 name = "health-nightly"
-description = "Nightly health analysis: FreeReps Postgres -> board.json + health.db + ntfy on ALERT"
+description = "Daily health analysis: FreeReps Postgres -> board.json + health.db + ntfy on ALERT, plus Sunday's week summary"
 path = "/opt/health"
 url = "git@github-health:dominickdupuy/health.git"
 branch = "main"
 kind = "job"
-# 10:00, after the phone's morning sync has landed the night. The board polls
-# /api/status every ten seconds, so the new document is on the wall within one
-# poll of the write.
-schedule = "0 10 * * *"
+# 05:30, after the phone's overnight sync has landed the night. Observed
+# imports arrive between roughly 00:20 and 05:20, so 05:30 sits behind the
+# tail of them. The cron time is not what makes the numbers fresh, though: the
+# phone syncs on its own cadence, and on a day it does not sync at all this
+# reads the same rows as yesterday and the board keeps its last good document.
+# Check coverage.last_import_at in board.json before blaming this schedule.
+#
+# The board polls /api/status every ten seconds, so the new document is on the
+# wall within one poll of the write.
+schedule = "30 5 * * *"
 job = "ATLAS_HEALTH_ENV_FILE=/home/domdd/atlas-health-analysis/.env /home/domdd/.local/bin/uv run atlas-health nightly"
 setup = "/home/domdd/.local/bin/uv sync"
 setup_marker = ".venv/bin/python"
 timeout_seconds = 900
-
-[[repo]]
-name = "health-weekly"
-description = "Sunday summary push (off unless WEEKLY_SUMMARY=true)"
-path = "/opt/health"
-url = "git@github-health:dominickdupuy/health.git"
-branch = "main"
-kind = "job"
-schedule = "0 20 * * 0"
-job = "ATLAS_HEALTH_ENV_FILE=/home/domdd/atlas-health-analysis/.env /home/domdd/.local/bin/uv run atlas-health weekly"
-timeout_seconds = 300

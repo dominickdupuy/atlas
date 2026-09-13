@@ -180,7 +180,9 @@ async def test_status_includes_hosted_queue_and_history_in_stub_profile(
     timeline = body["run_timeline"]
     repo_pending = [row for row in timeline["pending"] if row["origin"] == "repo"]
 
-    assert {row["detail"] for row in repo_pending} == {"cron", "one-off"}
+    # A cron fire carries no detail: every hosted repo fires from cron, so the
+    # word would only cost width (runs._SILENT_TRIGGER). One-offs still speak.
+    assert {row["detail"] for row in repo_pending} == {"", "one-off"}
     assert all(row["state"] == "queued" for row in repo_pending)
     assert timeline["pending_total"] == 3  # cron, the queued one-off, and the Atlas job
     assert timeline["history"][0]["name"] == "finance"
@@ -359,7 +361,8 @@ async def test_finance_figures_ride_on_the_run_detail(
     finance = next(row for row in timeline["history"] if row["name"] == "finance")
 
     assert finance["detail"] == (
-        "cron · 57s · 1,204 transactions · 3 reviewed · 0 uncategorized · 2 decisions · 1 new rules"
+        # The cron trigger is silent (runs._SILENT_TRIGGER); the figures lead.
+        "57s · 1,204 transactions · 3 reviewed · 0 uncategorized · 2 decisions · 1 new rules"
     )
 
 

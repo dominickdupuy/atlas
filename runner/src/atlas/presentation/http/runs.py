@@ -57,8 +57,14 @@ _FIGURE_LABELS = (
 )
 
 
+# Every hosted repo currently fires from cron, so the word says nothing a
+# reader could act on and costs a row's worth of width. Anything else — a
+# manual run, a queued one-off — still names itself.
+_SILENT_TRIGGER = "cron"
+
+
 def _repo_detail(run: HostedRepoRun) -> str:
-    parts = [run.trigger] if run.trigger else []
+    parts = [run.trigger] if run.trigger and run.trigger != _SILENT_TRIGGER else []
     if run.duration_seconds is not None:
         parts.append(f"{run.duration_seconds:.0f}s")
     if run.failed and run.exit_code is not None:
@@ -135,7 +141,7 @@ def build_runs_timeline(
             name=fire.name,
             state="queued",
             when=fire.at,
-            detail=fire.note or fire.source,
+            detail=fire.note or ("" if fire.source == _SILENT_TRIGGER else fire.source),
         )
         for fire in app.hosted_repos.upcoming(now)
     ]

@@ -1297,17 +1297,21 @@ body[data-stale="true"] .head-right .deck {
   flex: none;
 }
 
+/* Sized so four rows clear the rail rather than one: the panel is the
+   remainder left by WEATHER, and a run that only ever shows the newest
+   entry is a worse panel than four tighter ones. */
 .run {
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: 4px 12px;
+  gap: 2px 12px;
   align-items: center;
-  padding: 10px 0;
+  padding: 4px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .run-job {
-  font-size: 17px;
+  font-size: 15px;
+  line-height: 1.15;
   font-weight: 600;
   color: var(--cyan);
   overflow: hidden;
@@ -1328,7 +1332,7 @@ body[data-stale="true"] .head-right .deck {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.07em;
-  padding: 3px 9px;
+  padding: 2px 8px;
   border-radius: 999px;
   background: rgba(88, 166, 255, 0.16);
   color: var(--blue-text);
@@ -1353,7 +1357,8 @@ body[data-stale="true"] .head-right .deck {
 }
 
 .run-detail {
-  font-size: 14px;
+  font-size: 12.5px;
+  line-height: 1.15;
   color: var(--ink-45);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1367,7 +1372,8 @@ body[data-stale="true"] .head-right .deck {
 
 .run-at {
   justify-self: end;
-  font-size: 14px;
+  font-size: 12.5px;
+  line-height: 1.15;
   color: var(--ink-42);
   font-variant-numeric: tabular-nums;
 }

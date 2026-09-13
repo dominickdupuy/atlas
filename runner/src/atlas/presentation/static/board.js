@@ -1144,10 +1144,14 @@
      axis never changes what a chart costs in the vertical budget. */
   var HEALTH_AXIS_GUTTER = 26;
 
-  function healthYAxis(svg, width, height, min, max, format) {
+  /* `plotHeight` is the drawing area when it is shorter than the SVG, which is
+     the case for a chart that reserves a bottom gutter for date labels. It
+     defaults to the full height, so a chart without an x axis is unaffected. */
+  function healthYAxis(svg, width, height, min, max, format, plotHeight) {
+    var plot = plotHeight === undefined ? height : plotHeight;
     [0, 0.5, 1].forEach(function (fraction) {
       var value = min + (max - min) * fraction;
-      var y = height - fraction * height;
+      var y = plot - fraction * plot;
       svg.appendChild(
         svgEl("line", {
           x1: String(HEALTH_AXIS_GUTTER), x2: String(width),
@@ -1158,13 +1162,58 @@
       var label = svgEl("text", {
         x: String(HEALTH_AXIS_GUTTER - 5),
         // Nudge the end labels inward so neither is half cut off by the edge.
-        y: String(Math.min(height - 2, Math.max(9, y + 3))),
+        // Clamped to the plot, not the SVG: on a chart with a bottom gutter
+        // the lowest tick belongs above the date labels, not among them.
+        y: String(Math.min(plot - 2, Math.max(9, y + 3))),
         class: "health-axis-label",
         "text-anchor": "end",
       });
       label.textContent = format(value);
       svg.appendChild(label);
     });
+  }
+
+  /* Date ticks along the bottom, inside a gutter the plot leaves for them.
+
+     Only the weight chart carries one, because it is the only chart here whose
+     x span is not a fixed 60 days: it starts at the first reading, so it is a
+     different number of days every week and "the third dot along" means
+     nothing without a date under it. The 60-day charts have a span the panel
+     title already states, and spending 14px of a vertically-starved screen to
+     repeat it would be a poor trade.
+
+     Five labels at most. The slot width is whatever the span makes it, and
+     labels that collide are worse than no labels at all. */
+  var HEALTH_X_GUTTER = 14;
+
+  function healthXAxis(svg, keys, plotLeft, slot, width, plotHeight) {
+    if (keys.length === 0) return;
+    var last = keys.length - 1;
+    var wanted = Math.min(keys.length, 5);
+    var seen = {};
+    for (var tick = 0; tick < wanted; tick++) {
+      // Evenly spaced and always including both ends, so the axis states the
+      // range it actually covers rather than trailing off before the newest
+      // reading. Rounding can repeat an index on a short span; seen[] keeps
+      // the duplicate from being drawn twice at the same coordinate.
+      var index = wanted === 1 ? 0 : Math.round((tick * last) / (wanted - 1));
+      if (seen[index]) continue;
+      seen[index] = true;
+      var parts = keys[index].split("-");
+      var label = svgEl("text", {
+        x: String(
+          Math.min(
+            width - 2,
+            Math.max(plotLeft + 2, plotLeft + index * slot + slot / 2)
+          )
+        ),
+        y: String(plotHeight + HEALTH_X_GUTTER - 3),
+        class: "health-axis-label",
+        "text-anchor": index === 0 ? "start" : index === last ? "end" : "middle",
+      });
+      label.textContent = Number(parts[1]) + "/" + Number(parts[2]);
+      svg.appendChild(label);
+    }
   }
 
   function num(value, digits, fallback) {
@@ -1195,6 +1244,35 @@
       keys.push(
         day.getFullYear() + "-" + pad(day.getMonth() + 1) + "-" + pad(day.getDate())
       );
+    }
+    return keys;
+  }
+
+  /* Every calendar date from `startKey` through the document's own day,
+     inclusive, as YYYY-MM-DD. dayKeys() counts a fixed number of days back
+     from the end; this one is anchored at a date the data chose, which is what
+     a chart that begins at its first reading needs.
+
+     Stepping with setDate() from local noon, rather than subtracting
+     86400000ms: across a daylight saving change a day is 23 or 25 hours, and
+     fixed-millisecond arithmetic from midnight lands on the wrong calendar
+     day — the same trap the analysis side documents in its weight window. */
+  function dayKeysFrom(startKey, endIso) {
+    var parts = startKey.split("-");
+    var cursor = new Date(
+      Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 12
+    );
+    var end = new Date(endIso);
+    var last = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 12);
+    var keys = [];
+    // The analysis side already caps readings at 60 days, so this cannot run
+    // away; the bound is here so a malformed date cannot hang the screen.
+    while (cursor <= last && keys.length < 400) {
+      keys.push(
+        cursor.getFullYear() + "-" + pad(cursor.getMonth() + 1) + "-" +
+          pad(cursor.getDate())
+      );
+      cursor.setDate(cursor.getDate() + 1);
     }
     return keys;
   }
@@ -1327,6 +1405,32 @@
     host.appendChild(status);
 
     (doc.tiles || []).forEach(function (tile) {
+      /* The weight tile is the one tile whose value carries a unit, and the
+         document formats it in kilograms. Rebuilt here from doc.weight rather
+         than by re-parsing tile.value: the number in the string is the only
+         part that changes, but reaching into a formatted label to find it
+         breaks the moment the analysis side reformats it. The unit rides on
+         the 28d line because the tile head has no room for it and a bare
+         figure that moved from 79 to 174 has to say why somewhere. */
+      if (tile.key === "weight" && doc.weight) {
+        var seven = doc.weight.weight_7d;
+        var full = doc.weight.weight_28d;
+        host.appendChild(
+          tileNode(
+            tile.title,
+            seven === null || seven === undefined ? "--" : lb(seven),
+            tile.arrow,
+            tile.state,
+            [
+              full === null || full === undefined
+                ? "no data"
+                : "28d " + lbTerm(full),
+              "n " + doc.weight.weigh_ins_7d + "/7",
+            ]
+          )
+        );
+        return;
+      }
       host.appendChild(tileNode(tile.title, tile.value, tile.arrow, tile.state, tile.lines));
     });
 
@@ -1800,29 +1904,47 @@
     );
   }
 
+  /* The analysis side speaks SI and the board.json stays in kilograms: it is
+     the record the history database and the week summary are built from, and
+     changing its units would silently rewrite the meaning of every stored row.
+     Pounds are a display choice, so the conversion lives here, at the edge. */
+  var LB_PER_KG = 2.2046226218;
+
+  function lb(kg, digits) {
+    if (kg === null || kg === undefined || isNaN(kg)) return "—";
+    return num(kg * LB_PER_KG, digits === undefined ? 1 : digits);
+  }
+
+  /* The same figure with its unit, for prose. The unit is dropped along with
+     the number when there is nothing to show: "28d — lb" reads as a broken
+     value rather than an absent one, and 28d is absent for a month after the
+     first weigh-in by design -- it wants eight readings before it means
+     anything. */
+  function lbTerm(kg) {
+    return kg === null || kg === undefined || isNaN(kg) ? "—" : lb(kg) + " lb";
+  }
+
   function renderHealthWeight(doc) {
     var host = $("health-weight-body");
     clear(host);
     var weight = doc.weight;
     var width = 1180;
     var height = 160;
+    var plotHeight = height - HEALTH_X_GUTTER;
     var svg = healthSvg(width, height);
-    var keys = dayKeys(doc.generated_at, 60);
+    var readings = weight.readings || [];
     var byDate = {};
-    (weight.readings || []).forEach(function (reading) {
-      byDate[reading.date] = reading.kg;
+    readings.forEach(function (reading) {
+      byDate[reading.date] = reading.kg * LB_PER_KG;
     });
 
-    var values = [];
-    keys.forEach(function (key) {
-      if (byDate[key] !== undefined) values.push(byDate[key]);
-    });
-    if (values.length === 0) {
+    if (readings.length === 0) {
+      text($("health-weight-title"), "WEIGHT");
       host.appendChild(
         el(
           "div",
           "health-note",
-          "No readings yet. Last known " + num(weight.last_kg, 1) + " kg on " +
+          "No readings yet. Last known " + lb(weight.last_kg) + " lb on " +
             (weight.last_date || "—") + " — the scale writes daily once it is in use."
         )
       );
@@ -1830,39 +1952,62 @@
       return;
     }
 
+    /* The window starts at the first reading rather than a fixed 60 days back.
+       Three weigh-ins on a 60-day axis are three dots crushed into the last
+       inch of the panel with four feet of blank chart to their left: the scale
+       is dominated by days that were never measured, and the trend they do
+       show is too small to read. Anchoring at the first reading spends the
+       width on data that exists, and the axis grows back out to 60 days on its
+       own as the readings accumulate, since the analysis side already drops
+       anything older than that. */
+    var keys = dayKeysFrom(readings[0].date, doc.generated_at);
+    if (keys.length === 0) keys = [readings[0].date];
+
+    var values = [];
+    keys.forEach(function (key) {
+      if (byDate[key] !== undefined) values.push(byDate[key]);
+    });
+
     // The 7d and 28d lines are drawn on this axis too, so they have to be
     // inside it -- a mean sitting outside the range of the dots it summarises
     // would be clipped away, and its absence would read as "not measured".
-    var bounds = [weight.weight_7d, weight.weight_28d].concat(values);
-    var low = Math.min.apply(null, values) - 1;
-    var high = Math.max.apply(null, values) + 1;
+    var means = [weight.weight_7d, weight.weight_28d].map(function (kg) {
+      return kg === null || kg === undefined ? kg : kg * LB_PER_KG;
+    });
+    var bounds = means.concat(values);
+    // Two pounds of headroom, the pound-scale equivalent of the kilogram this
+    // padding used to be: enough that a flat week is a flat line rather than
+    // noise amplified to fill the panel.
+    var low = Math.min.apply(null, values) - 2;
+    var high = Math.max.apply(null, values) + 2;
     var domain = healthDomain(bounds, low, high);
     low = domain.min;
     high = domain.max;
     var plotLeft = HEALTH_AXIS_GUTTER;
     var slot = (width - plotLeft) / keys.length;
 
-    function y(kg) {
-      return height - ((kg - low) / (high - low || 1)) * height;
+    function y(pounds) {
+      return plotHeight - ((pounds - low) / (high - low || 1)) * plotHeight;
     }
 
-    healthYAxis(svg, width, height, low, high, function (kg) {
-      return num(kg, 1);
-    });
+    healthYAxis(svg, width, height, low, high, function (pounds) {
+      return num(pounds, 1);
+    }, plotHeight);
+    healthXAxis(svg, keys, plotLeft, slot, width, plotHeight);
 
     keys.forEach(function (key, index) {
-      var kg = byDate[key];
-      if (kg === undefined) return;
+      var pounds = byDate[key];
+      if (pounds === undefined) return;
       svg.appendChild(
         svgEl("circle", {
-          cx: String(plotLeft + index * slot + slot / 2), cy: String(y(kg)), r: "3",
+          cx: String(plotLeft + index * slot + slot / 2), cy: String(y(pounds)), r: "3",
           class: "health-dot",
         })
       );
     });
     [
-      { value: weight.weight_7d, cls: "health-mean" },
-      { value: weight.weight_28d, cls: "health-goal" },
+      { value: means[0], cls: "health-mean" },
+      { value: means[1], cls: "health-goal" },
     ].forEach(function (line) {
       if (line.value === null || line.value === undefined) return;
       svg.appendChild(
@@ -1878,11 +2023,12 @@
       el(
         "div",
         "health-note",
-        "7d " + num(weight.weight_7d, 1) + " kg · 28d " + num(weight.weight_28d, 1) +
-          " kg · week " + num(weight.week_change, 1) + " kg · BMI " + num(weight.bmi, 1) +
+        "7d " + lbTerm(weight.weight_7d) + " · 28d " + lbTerm(weight.weight_28d) +
+          " · week " + lbTerm(weight.week_change) + " · BMI " + num(weight.bmi, 1) +
           (weight.bmi_stale ? " (stale)" : "") + " · weigh-ins " + weight.weigh_ins_7d + "/7"
       )
     );
+    text($("health-weight-title"), "WEIGHT · " + keys.length + " DAYS");
     text($("health-weight-source"), "weigh-ins " + weight.weigh_ins_7d + "/7");
   }
 
